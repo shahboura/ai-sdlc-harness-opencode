@@ -22,7 +22,7 @@ Requires **Claude Code** ([claude.ai/code](https://claude.ai/code)).
 **2. Install the plugin:**
 
 ```
-/plugin install ai-sdlc-harness@MostAshraf-ai-sdlc-harness
+/plugin install ai-sdlc-harness@ai-sdlc-harness
 ```
 
 **3. Reload plugins:**
@@ -40,6 +40,8 @@ Requires **Claude Code** ([claude.ai/code](https://claude.ai/code)).
 That's it. `/dev-workflow` and `/story-workflow` are now available.
 
 > **Scope options:** Add `--scope project` to share the plugin with your whole team via `.claude/settings.json`, or `--scope local` to keep it personal and git-ignored. Default is `--scope user` (personal, applies everywhere).
+
+> **Runtime support:** Claude Code today. Codex CLI, Cursor, GitHub Copilot, and OpenCode are on the roadmap (separate work).
 
 ## Prerequisites
 
