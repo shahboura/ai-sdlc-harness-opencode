@@ -6,6 +6,89 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
+### Slice 02 — finish the WS-2 hook rewrites
+
+All five remaining guard hooks now source `_hook-lib.sh` (so the python
+probe, payload reader, and workspace walk-up are shared) and delegate
+their logic to dedicated python helpers (so the parsing is unit-testable).
+The eight scripts no longer duplicate JSON parsing or python probing.
+
+- **`tracker-transition-guard.sh` rewritten.** Matcher broadened to
+  `Write|Edit|MultiEdit` (was `Edit`-only). The hook now applies the edit
+  in-memory to the on-disk tracker content, diffs task statuses by ID,
+  and validates every transition that actually changed. Multi-row edits
+  validate every row (the old hook only caught the first emoji). Whole-file
+  `Write` operations are covered. Metadata-only column edits (Notes,
+  Commit, Reviewer Verdict, timestamps) pass through silently because
+  they don't change the parsed status.
+- **`sensitive-file-guard.sh` rewritten.** Matcher broadened to
+  `Write|Edit|MultiEdit|NotebookEdit`. Deny-list moved into a shared
+  `_sensitive_patterns.py` module (used by both write-side and Bash-side
+  guards), expanded to: `.env*` (catching `.env.local`/`.env.production`
+  that the old `\.env$` regex missed), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `*.kdbx`, `*.crt`, `id_rsa*`, `id_ed25519*`, `*.tfstate*`, `.netrc`,
+  `.npmrc`, `.pypirc`, `credentials*`, `secrets.*`.
+- **`tracker-update-reminder.sh` rewritten.** Fixes the `PROMPT=… echo …
+  | python` envvar leak (the old pipeline never made `PROMPT` available
+  to the python interpreter, so the orchestrator-prompt task-ID fallback
+  never worked). `tool_response` now accepts list-of-content-blocks shape
+  (recent SDK shape). The `AGENT STATUS` block extraction extends to the
+  next H1/H2 heading instead of stopping at the first blank line. Tracker
+  selection now matches the story ID from the orchestrator prompt against
+  tracker filenames, with most-recent-mtime as fallback (the old `ls -t`
+  picked the wrong tracker on multi-story sessions).
+- **`agent-status-check.sh` rewritten.** Removed the `/tmp/agent-status-debug.json`
+  write that the old hook performed on every invocation. Presence check
+  upgraded from "phrase appears anywhere" to "phrase appears in the final
+  ~50 lines AND the block contains a non-empty `Outcome:` or `Verdict:`
+  field". Mid-prose mentions of the literal phrase no longer satisfy the
+  gate. Fail-closed when a response is extractable; fail-open when no
+  response text can be located in the payload (warning to stderr so
+  payload-shape gaps are investigatable).
+- **`squash-merge-verify.sh` rewritten.** `shlex`-based command detection
+  handles `cd repo && git merge --squash …`, `(cd repo; git …)`, env-var
+  prefixes (`X=Y git …`), and `git -c <cfg>` config flags. When the
+  command uses `cd <path>` to position before `git merge`, the implicit
+  cwd is carried forward so the verification runs in the right repo.
+  Staged-count comparison done in python with an int default; no shell
+  `[ "" -gt 0 ]` syntax-error path on `git -C` failure. Dropped the
+  brittle `MERGE_MSG`-file AND-condition; relies on
+  `git diff --name-only --diff-filter=U` alone (the authoritative
+  conflict indicator).
+- **`stop-failure-recovery.sh` + new `stop-failure-marker.sh`.** The
+  inline shell command that used to write the `.stop-failure` marker
+  via `bash -c 'test -f .claude/context/provider-config.md && …'` had
+  a cwd-based gate — if the orchestrator changed directory before the
+  failure, the marker was never written. Replaced by `stop-failure-marker.sh`
+  which uses `hook_workspace_root` to walk up. The recovery hook uses
+  the same walk-up.
+- **Matcher updates in `hooks/hooks.json`:** `tracker-transition-guard`
+  now matches `Write|Edit|MultiEdit`; `sensitive-file-guard` matches
+  `Write|Edit|MultiEdit|NotebookEdit`; the `StopFailure` inline command
+  is replaced with the new `stop-failure-marker.sh`.
+
+### Tests — slice 02
+
+Six new test suites under `tests/hooks/`, all using the same pure-bash
+harness from slice 01:
+
+- `tracker-transition-guard` — 18 cases (legal + illegal + multi-row +
+  MultiEdit + Write + metadata-only).
+- `sensitive-file-guard` — 21 cases (every pattern in the deny-list,
+  `Write`/`Edit`/`MultiEdit`/`NotebookEdit` coverage, negative cases).
+- `tracker-update-reminder` — 10 cases (developer/reviewer outcomes,
+  multi-paragraph block survival, list-shaped response, tracker-by-story
+  selection, no-op cases).
+- `agent-status-check` — 9 cases (presence + Outcome/Verdict requirement,
+  mid-prose mention rejection, payload-shape gap fail-open, no /tmp
+  debug write).
+- `squash-merge-verify` — 10 cases (command form variants, success,
+  empty result warning, nonexistent-repo graceful degradation).
+- `stop-failure-recovery` — 7 cases (marker write/read with workspace
+  walk-up from subdirs, one-shot deletion, outside-workspace no-op).
+
+Slice 02 raises total test coverage from 72 → 147 across 9 suites.
+
 ### Hardening — enforcement primitives
 
 - **Shared hook library (`scripts/_hook-lib.sh`)** — every new/rewritten hook

@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -17,7 +17,7 @@
         ]
       },
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -94,7 +94,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f .claude/context/provider-config.md && touch .claude/context/.stop-failure || true'",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop-failure-marker.sh",
             "timeout": 5
           }
         ]

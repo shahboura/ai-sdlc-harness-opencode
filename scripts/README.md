@@ -7,21 +7,28 @@ the inventory is reviewable at a glance.
 
 | Script | Event | Matcher | Policy | Purpose |
 |--------|-------|---------|--------|---------|
-| [`_hook-lib.sh`](_hook-lib.sh) | (sourced) | — | — | Shared primitives: python probe, payload reader, workspace detection, exit helpers. |
+| [`_hook-lib.sh`](_hook-lib.sh) | (sourced) | — | — | Shared primitives: source-time python probe, payload reader, workspace detection, exit helpers. |
 | [`_hook_field.py`](_hook_field.py) | (helper) | — | — | Extract a dotted-path field from a JSON payload file. Joins list-shaped `tool_response` text blocks. |
-| [`_git_argparse.py`](_git_argparse.py) | (helper) | — | — | `shlex`-based parser for `git commit` invocations. Handles `-C`, `-c`, env-var prefixes, chained commands, multi-`-m`, `--message=`, `-F`, `--amend`, heredoc bodies via `$(cat <<TAG ... TAG)`. |
+| [`_git_argparse.py`](_git_argparse.py) | (helper) | — | — | `shlex`-based parser for `git commit` invocations. Handles `-C`, `-c`, env-var prefixes, chained commands, multi-`-m`, `--message=`, `-F`, `--amend`, `--fixup`/`--squash`, heredoc bodies. |
+| [`_sensitive_patterns.py`](_sensitive_patterns.py) | (helper) | — | — | Single source of truth for the sensitive-file deny-list used by both write-side and Bash-side guards. |
 | [`_validate_commit_msg.py`](_validate_commit_msg.py) | (helper) | — | fail-closed | Validates the reconstructed commit message against the harness convention. |
-| [`_bash_write_guard.py`](_bash_write_guard.py) | (helper) | — | fail-closed | Inspects Bash commands for writes to `ai/`, sensitive files, or role-forbidden paths. |
+| [`_bash_write_guard.py`](_bash_write_guard.py) | (helper) | — | mixed | fail-closed on recognized writes, fail-open on unparseable Bash. |
+| [`_sensitive_file_guard.py`](_sensitive_file_guard.py) | (helper) | — | fail-closed | Pattern-matches Write/Edit/MultiEdit/NotebookEdit targets against the shared deny-list. |
+| [`_tracker_transition_guard.py`](_tracker_transition_guard.py) | (helper) | — | fail-closed | Applies the edit in-memory to the on-disk tracker, diffs task-row statuses by ID, validates every transition. |
+| [`_tracker_update_reminder.py`](_tracker_update_reminder.py) | (helper) | — | fail-open | Emits `hookSpecificOutput.additionalContext` when the tracker doesn't match the agent's verdict. |
+| [`_agent_status_check.py`](_agent_status_check.py) | (helper) | — | mixed | fail-closed when response extractable; fail-open otherwise. |
+| [`_squash_merge_verify.py`](_squash_merge_verify.py) | (helper) | — | fail-open | Detects squash-merge form, runs `git diff` to verify conflicts/staged changes. |
 | [`validate-commit-msg.sh`](validate-commit-msg.sh) | `PreToolUse` | `Bash` | **fail-closed** | Block `git commit` invocations whose message doesn't match `#<STORY> #<TASK>: …` (with TDD / test-harden / autosquash exceptions). If the parser can't reconstruct the message, the commit is refused. |
-| [`bash-write-guard.sh`](bash-write-guard.sh) | `PreToolUse` | `Bash` | **fail-closed** | Block Bash-driven writes to harness-owned (`ai/**`) or sensitive paths; enforce read-only on reviewer (when subagent identity is in the payload). |
-| [`sensitive-file-guard.sh`](sensitive-file-guard.sh) | `PreToolUse` | `Write\|Edit` | fail-closed | Block `Write`/`Edit` on `*.env`/`*.pem`/etc. (paired with `bash-write-guard.sh` for the Bash side). |
-| [`tracker-transition-guard.sh`](tracker-transition-guard.sh) | `PreToolUse` | `Edit` | fail-closed | Reject illegal task-tracker status transitions. |
+| [`bash-write-guard.sh`](bash-write-guard.sh) | `PreToolUse` | `Bash` | **mixed** | Block Bash-driven writes to `ai/`, sensitive paths, or role-forbidden targets (when `agent_type` is in the payload). |
+| [`sensitive-file-guard.sh`](sensitive-file-guard.sh) | `PreToolUse` | `Write\|Edit\|MultiEdit\|NotebookEdit` | **fail-closed** | Block writes/edits/notebook edits whose target matches the shared sensitive-file deny-list (`.env*`, `*.pem`, `id_rsa*`, `*.tfstate*`, `.netrc`, `.npmrc`, `credentials*`, `secrets.*`, etc.). Paired with `bash-write-guard.sh` for the Bash side. |
+| [`tracker-transition-guard.sh`](tracker-transition-guard.sh) | `PreToolUse` | `Write\|Edit\|MultiEdit` | **fail-closed** | Apply the edit in-memory and validate every status transition by task ID. Multi-row edits validate every row, not just the first. Whole-file Writes covered. |
 | [`tracker-metrics-guard.sh`](tracker-metrics-guard.sh) | `PreToolUse` | `Edit` | **fail-open (advisory)** | Warn on malformed metric dates without blocking. |
-| [`squash-merge-verify.sh`](squash-merge-verify.sh) | `PostToolUse` | `Bash` | **fail-open (advisory)** | Surface conflicts after a squash-merge attempt. |
-| [`tracker-update-reminder.sh`](tracker-update-reminder.sh) | `PostToolUse` | `Agent` | **fail-open (advisory)** | Remind the orchestrator to update the tracker after a subagent verdict. |
-| [`agent-status-check.sh`](agent-status-check.sh) | `SubagentStop` | _empty_ | fail-open (advisory) | Verify subagent ended with a `📋 AGENT STATUS` block. |
+| [`squash-merge-verify.sh`](squash-merge-verify.sh) | `PostToolUse` | `Bash` | **fail-open (advisory)** | Surface conflicts and empty squash-merge results. Handles `git -C`, `cd && git`, `git -c`, env-var prefixes. |
+| [`tracker-update-reminder.sh`](tracker-update-reminder.sh) | `PostToolUse` | `Agent` | **fail-open (advisory)** | Remind the orchestrator to update the tracker after a subagent verdict. List-shaped `tool_response` handled; tracker selected by story-ID filename match. |
+| [`agent-status-check.sh`](agent-status-check.sh) | `SubagentStop` | _empty_ | **fail-closed** when response extractable | Verify subagent ended with a `📋 AGENT STATUS` block AND the block contains a non-empty `Outcome:` or `Verdict:`. |
 | [`tester-activation-guard.sh`](tester-activation-guard.sh) | `SubagentStart` | `tester` | **fail-closed** | Reject tester spawns when no failing tests are due. |
-| [`stop-failure-recovery.sh`](stop-failure-recovery.sh) | `UserPromptSubmit` | _empty_ | fail-open (advisory) | Surface recovery instructions when an API stop-failure marker is present. |
+| [`stop-failure-marker.sh`](stop-failure-marker.sh) | `StopFailure` | _empty_ | fail-open (advisory) | Drop a `.stop-failure` marker file under the workspace's `.claude/context/` (workspace walk-up — no cwd dependency). |
+| [`stop-failure-recovery.sh`](stop-failure-recovery.sh) | `UserPromptSubmit` | _empty_ | fail-open (advisory) | On the first prompt after a `StopFailure`, delete the marker and emit recovery instructions. Walks up to find the workspace. |
 
 ## Adding a new hook
 

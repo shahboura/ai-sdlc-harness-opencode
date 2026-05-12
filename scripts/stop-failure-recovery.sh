@@ -1,26 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ---
 # name: stop-failure-recovery
 # event: UserPromptSubmit
 # matcher: ""
-# scope: global (plugin-level)
+# scope: workspace
 # blocking: false
+# policy: fail-OPEN (advisory; appends context to the prompt)
 # description: >
-#   When the previous turn ended with an API error (StopFailure), the
-#   stop-failure-marker.sh hook wrote .claude/context/.stop-failure.
-#   This hook fires on the next UserPromptSubmit, checks for that marker,
-#   and — if found — outputs a recovery context block before Claude processes
-#   the user's message. The marker is deleted immediately so it fires once.
-# ---
+#   On the first UserPromptSubmit after a StopFailure, check the workspace
+#   for the `.stop-failure` marker written by `stop-failure-marker.sh`.
+#   If present, delete the marker and emit a recovery instructions block
+#   on stdout — Claude Code appends it to the user's prompt as additional
+#   context. Marker deletion is unconditional so it fires exactly once.
 #
-# Exit 0 always. Stdout is appended to the user's prompt as additional context.
+#   Uses workspace walk-up (not cwd) so it works even when the
+#   orchestrator has changed directory.
+# ---
+set -uo pipefail
 
-MARKER=".claude/context/.stop-failure"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$DIR/_hook-lib.sh"
 
-if [ ! -f ".claude/context/provider-config.md" ]; then
+WS_ROOT="$(hook_workspace_root 2>/dev/null || true)"
+if [ -z "$WS_ROOT" ]; then
     exit 0
 fi
 
+MARKER="$WS_ROOT/.claude/context/.stop-failure"
 if [ ! -f "$MARKER" ]; then
     exit 0
 fi

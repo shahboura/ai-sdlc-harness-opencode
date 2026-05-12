@@ -39,28 +39,19 @@ Exit codes:
 """
 from __future__ import annotations
 
-import fnmatch
 import json
 import os
 import re
 import shlex
 import sys
 
+from _sensitive_patterns import matches_sensitive as _matches_sensitive_basename
+
 
 _HEREDOC_RE = re.compile(
     r"<<(-)?\s*[\"\']?(\w+)[\"\']?[^\n]*\n(.*?)\n[\t ]*\2(?:\b|$)",
     re.DOTALL,
 )
-
-_SENSITIVE_PATTERNS = [
-    ".env", ".env.*", "*.env",
-    "*.pem", "*.key", "*.p12", "*.pfx", "*.kdbx", "*.crt",
-    "id_rsa", "id_rsa.*", "id_ed25519", "id_ed25519.*",
-    "*.tfstate", "*.tfstate.*",
-    ".netrc", ".npmrc", ".pypirc",
-    "credentials", "credentials.*",
-    "secrets", "secrets.*",
-]
 
 _REDIRECT_OPERATORS = {">", ">>", ">|", "&>", "&>>", "2>", "2>>", "1>", "1>>"}
 _REDIRECT_OP_RE = re.compile(r"^([12]?&?>>?\|?)(.*)$")
@@ -108,14 +99,7 @@ def _is_under_ai(path: str) -> bool:
 
 
 def _matches_sensitive(path: str) -> bool:
-    p = _normalize_path(path)
-    base = os.path.basename(p)
-    if not base:
-        return False
-    for pat in _SENSITIVE_PATTERNS:
-        if fnmatch.fnmatch(base, pat) or fnmatch.fnmatch(base.lower(), pat):
-            return True
-    return False
+    return _matches_sensitive_basename(_normalize_path(path))
 
 
 def _extract_write_targets(cmd: str) -> list[tuple[str, str]]:
