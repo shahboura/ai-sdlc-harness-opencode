@@ -219,12 +219,54 @@ After all new tasks are ✅ Done across all repos, proceed to Step 9.
 Update the tracker Workflow Metrics: set `PR review response completed` to
 `date -u +"%Y-%m-%d %H:%M UTC"`.
 
-Amend the Phase 6 tracker commit (the tracker is already committed after Phase 6):
+Create a **new tracker-update commit** on top of the Phase 7 task commits. **Do NOT amend.**
+By this point, HEAD is the most recent Phase 7 task squash-merge — not the Phase 6 tracker
+commit — so `git commit --amend` would silently rewrite a task commit's tree with tracker
+content. A new commit also keeps the tracker's recorded squash-merge SHAs accurate (an
+amend that autosquashes back into the Phase 6 tracker commit would rewrite the SHAs of
+every Phase 7 task commit above it, making the values just recorded in the tracker stale).
+
+First, determine whether the workspace is itself a git repository:
+
+```bash
+git -C ai/tasks/ rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
 
 ```bash
 git add ai/tasks/
-git commit --amend --no-edit
+git commit -m "$(cat <<'EOF'
+#<STORY-ID> #TPR-RESP: record PR review response completion
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+EOF
+)"
+git push origin <feature-branch>
 ```
+
+**If the workspace is NOT a git repo** (tracker was copied into the repo in Phase 6 Step 6):
+
+Sync the updated tracker back into each affected repo using the **Read + Write** tools
+(not `cp` — the `bash-write-guard` hook blocks Bash writes to `ai/` paths):
+
+- Read `ai/tasks/<tracker-file>` (workspace) → Write to `<REPO_PATH>/ai/tasks/<tracker-file>`
+
+Then commit and push from the repo:
+
+```bash
+git -C "<REPO_PATH>" add ai/tasks/
+git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
+#<STORY-ID> #TPR-RESP: record PR review response completion
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+EOF
+)"
+git -C "<REPO_PATH>" push origin <feature-branch>
+```
+
+Both pushes are fast-forward (a new commit on top of the remote's tip), so
+`--force-with-lease` is not required.
 
 Present to the human:
 

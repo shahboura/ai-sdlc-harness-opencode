@@ -43,6 +43,22 @@ test_allow_proper_noun_caps_in_description() {
     assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit -m "#123 #T1: AWS OAuth flow wired up"')"
 }
 
+# ── Orchestrator meta task IDs (Phase 2 / 6 / 7) ─────────────────────────────
+# These are instances of the canonical form (#T<chars> matches the TASK_ID
+# regex). Documented in README "Branch & Commit Conventions".
+
+test_allow_orchestrator_plan_commit() {
+    assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit -m "#123 #TPLAN: add approved implementation plan"')"
+}
+
+test_allow_orchestrator_tracker_commit() {
+    assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit -m "#123 #TTRACKER: add task tracker with final workflow state"')"
+}
+
+test_allow_orchestrator_pr_response_commit() {
+    assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit -m "#123 #TPR-RESP: record PR review response completion"')"
+}
+
 # ── Command-shape coverage (the actual parser holes) ────────────────────────
 
 test_allow_git_C_form() {

@@ -77,6 +77,21 @@ These rules apply to ALL phases of the dev-workflow. Individual command files mu
 
 13. **Always double-quote paths in shell commands**: Any repo path, worktree path, or file path used in a Bash command MUST be wrapped in double quotes. Paths on macOS and developer machines routinely contain spaces (e.g. `/Users/x/My Work/repo`) — an unquoted path splits into multiple arguments and causes the command to fail silently or destructively. This applies to orchestrator git commands, agent worktree setup, and all skill SKILL.md snippets. Example: `git -C "<repo-path>" worktree add "<worktree-path>"` not `git -C <repo-path> worktree add <worktree-path>`.
 
+14. **Conflict-Surfacing Rule — surface conflicts; never silently drop a documented step**: If a command-file step appears to conflict with an orchestrator rule, a hook block, another command file, or discovered state, STOP and surface the conflict to the human. State it explicitly — e.g. *"Step X in `commands/plan.md` says `git add ai/plans/`, but the workspace is not a git repo and rule #8 forbids copying `ai/` into a code repo before Phase 6. How would you like to proceed?"* Then wait for direction.
+
+    Specifically, do **not**:
+    - Silently skip a documented step by citing a rule as an "override" (the two are not in a hierarchy — an apparent conflict is a bug in the workflow definition, not a directive to pick a winner).
+    - Invent a workaround the documentation doesn't sanction (e.g. `cp` into a hook-guarded path, retry with `--no-verify`, disable a hook).
+    - Declare yourself authoritative over either the command file or the rule.
+
+    This applies when:
+    - A hook blocks an action the command file told you to take.
+    - Two command files give contradictory instructions for the same situation.
+    - Discovered state (e.g. workspace is not a git repo, a referenced file is missing, a tool returns unexpected output) makes a documented step impossible or ambiguous.
+    - An orchestrator rule appears to forbid something a command file requires.
+
+    The cost of pausing to surface is low (one human reply). The cost of silently dropping a step is high: the workflow definition stays buggy, and the human loses visibility into what was skipped and why.
+
 ## Agent Response Contract
 
 All agents end every response with a `📋 AGENT STATUS` block. The orchestrator MUST parse this block after every agent invocation to determine the next action.

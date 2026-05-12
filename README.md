@@ -156,7 +156,7 @@ sequenceDiagram
         O->>H: Present plan + Test Outline for approval
         H->>O: APPROVED / CHANGES
         Note over O: Record metric: Plan approved
-        Note over O: git add ai/plans/ && git commit (plan only, tracker stays uncommitted)
+        Note over O: If workspace is a git repo: commit plan (tracker stays uncommitted). Else: plan stays in workspace until Phase 6.
     end
 
     rect rgb(85, 50, 20)
@@ -226,7 +226,7 @@ sequenceDiagram
         else Critical issues found
             H->>O: Fix / Proceed anyway
         end
-        Note over O: git add ai/tasks/ && git commit (tracker — first and only commit)
+        Note over O: Commit tracker (and plan, if not already committed in Phase 2)
         O->>O: /pr-creator
         Note over O: Record metric: PR created
     end
@@ -242,7 +242,7 @@ sequenceDiagram
             O->>P: @planner Add new tasks for accepted comments
             P-->>O: AGENT STATUS (tracker amended with new tasks)
             Note over O: Re-enter Phase 3 loop for new tasks only
-            Note over O: On completion: amend tracker commit, push, comment resolved on PR
+            Note over O: On completion: new tracker-update commit on top, push, reply on resolved PR threads
         else All comments rejected
             Note over O: Reply on PR with rationale for each INVALID
         end
@@ -312,9 +312,42 @@ The Reviewer performs a three-phase review:
 #123456 test-harden: add integration tests for token refresh flow
 ```
 
+**Orchestrator meta commits:** the orchestrator commits the plan, the tracker, and (when Phase 7 runs) a tracker-update commit using designated meta Task IDs that match the canonical form:
+
+```
+#123456 #TPLAN:    add approved implementation plan                  (Phase 2)
+#123456 #TTRACKER: add task tracker with final workflow state         (Phase 6)
+#123456 #TPR-RESP: record PR review response completion               (Phase 7)
+```
+
 Every commit body includes `Co-Authored-By: Claude Code <noreply@anthropic.com>`.
 
-These conventions are enforced by the `validate-commit-msg` plugin-level hook (fires on every `git commit` Bash call by any agent). Orchestrator-authored commits (the Phase 2 plan commit and Phase 6 tracker commit) are not covered by the hook — follow the format manually for those.
+These conventions are enforced by the `validate-commit-msg` plugin-level hook (fires on every `git commit` Bash call by any agent, including the orchestrator). The hook accepts: the canonical `#<STORY-ID> #<TASK-ID>: …` form (the meta Task IDs above — `#TPLAN`, `#TTRACKER`, `#TPR-RESP` — are valid instances of this form), the TDD `test:`/`impl:` variants, the Phase 5 `test-harden` exception, and git's autosquash markers (`fixup!`/`squash!`/`amend!`/`reword!`). Anything else is fail-closed.
+
+## Guardrail Hooks
+
+The plugin ships with hooks that enforce harness invariants at the Claude Code level. They fire on every relevant tool call in every session — no setup beyond installing the plugin. All hooks scope themselves to initialised harness workspaces (`.claude/context/provider-config.md` must exist), so they don't interfere with unrelated Claude Code sessions.
+
+| Hook | Event · Matcher | What it enforces |
+|------|-----------------|------------------|
+| `validate-commit-msg` | PreToolUse · Bash | `git commit` subjects match `#<STORY-ID> #<TASK-ID>: …` or one of the documented variants (`test:`/`impl:` TDD suffixes, `test-harden:` Phase 5 form, `fixup!`/`squash!`/`amend!`/`reword!` autosquash markers). Fail-closed on any unparseable form — chained commands, `git -C`, multiple `-m`, `--message=`, `-F`, `--amend`, heredoc bodies. |
+| `bash-write-guard` | PreToolUse · Bash | Blocks shell-driven writes (redirects, `tee`, `cp`, `mv`, `install`, `dd of=…`, `ln`) into `ai/` paths or sensitive files. `ai/` is owned by Read/Write tool calls, never shell mutations. Role-aware when subagent identity is available: reviewer = no writes; planner = writes only under `ai/`. |
+| `sensitive-file-guard` | PreToolUse · Write\|Edit\|MultiEdit\|NotebookEdit | Blocks direct file-tool writes to `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.tfstate`, and similar credential patterns. Shares the deny-list (`scripts/_sensitive_patterns.py`) with `bash-write-guard`. |
+| `tracker-transition-guard` | PreToolUse · Write\|Edit\|MultiEdit | Applies the edit in-memory and validates every task-status transition against the legal state machine on a per-row basis (each Task ID's before/after status is diffed and checked). Whole-file `Write` is covered; metadata-only edits (Notes, Commit, Verdict, timestamps) pass through. |
+| `tracker-metrics-guard` | PreToolUse · Write\|Edit\|MultiEdit | Validates that the tracker's Workflow Metrics and Task Metrics tables stay well-formed. |
+| `squash-merge-verify` | PostToolUse · Bash | Verifies `git merge --squash` only ran after Reviewer approval. `shlex`-aware — handles `cd repo && …`, subshells, env-var prefixes, `git -c key=val`. |
+| `tracker-update-reminder` | PostToolUse · Agent | After subagent runs, reminds the orchestrator to sync tracker status if it looks stale. Tracker selection matches the story ID against tracker filenames (mtime fallback). |
+| `tester-activation-guard` | SubagentStart · tester | Mode-aware: in Phase 3 (`auto-tdd`), allows when at least one task is 🔧 In Progress; in Phase 5 (`auto-harden`), blocks unless every development task (T1, T2, …) is ✅ Done. Falls back to harden semantics if mode is undetectable (safe default). |
+| `agent-status-check` | SubagentStop | Verifies every agent response ends with a `📋 AGENT STATUS` block — checks for tail position plus a non-empty `Outcome:` or `Verdict:` field. Mid-prose mentions no longer satisfy the gate. |
+| `stop-failure-marker` | StopFailure | Writes a recovery marker on unexpected agent stop (API failure, timeout). Cwd-independent via shared workspace walk-up. |
+| `stop-failure-recovery` | UserPromptSubmit | Detects the recovery marker at the start of the next prompt and injects resume instructions for the orchestrator. |
+| *(inline prompt)* | PostCompact | Reconstructs workflow state from the latest tracker and plan after context compaction. |
+
+**Fail-closed vs fail-open** — every hook declares its policy in [`scripts/README.md`](scripts/README.md). Recognised violations always block; unparseable inputs default to fail-open so legitimate-but-weird commands aren't silently swallowed. The strictest is `bash-write-guard`: every recognised shell-write pattern is fail-closed.
+
+**Shared library** — every guard script sources `scripts/_hook-lib.sh` for python probing, payload reading, dotted-path field extraction (including list-shaped `tool_response` blocks), exit helpers, and workspace-root walk-up. Commit-command parsing lives in `scripts/_git_argparse.py` — a `shlex`-based parser that replaces the brittle single-regex extractor.
+
+**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). 147 cases across 9 suites; run via `tests/hooks/run.sh`.
 
 ## Utility Commands
 

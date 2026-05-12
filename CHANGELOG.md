@@ -6,166 +6,32 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
-### Slice 02 — finish the WS-2 hook rewrites
+### Features
 
-All five remaining guard hooks now source `_hook-lib.sh` (so the python
-probe, payload reader, and workspace walk-up are shared) and delegate
-their logic to dedicated python helpers (so the parsing is unit-testable).
-The eight scripts no longer duplicate JSON parsing or python probing.
-
-- **`tracker-transition-guard.sh` rewritten.** Matcher broadened to
-  `Write|Edit|MultiEdit` (was `Edit`-only). The hook now applies the edit
-  in-memory to the on-disk tracker content, diffs task statuses by ID,
-  and validates every transition that actually changed. Multi-row edits
-  validate every row (the old hook only caught the first emoji). Whole-file
-  `Write` operations are covered. Metadata-only column edits (Notes,
-  Commit, Reviewer Verdict, timestamps) pass through silently because
-  they don't change the parsed status.
-- **`sensitive-file-guard.sh` rewritten.** Matcher broadened to
-  `Write|Edit|MultiEdit|NotebookEdit`. Deny-list moved into a shared
-  `_sensitive_patterns.py` module (used by both write-side and Bash-side
-  guards), expanded to: `.env*` (catching `.env.local`/`.env.production`
-  that the old `\.env$` regex missed), `*.pem`, `*.key`, `*.p12`, `*.pfx`,
-  `*.kdbx`, `*.crt`, `id_rsa*`, `id_ed25519*`, `*.tfstate*`, `.netrc`,
-  `.npmrc`, `.pypirc`, `credentials*`, `secrets.*`.
-- **`tracker-update-reminder.sh` rewritten.** Fixes the `PROMPT=… echo …
-  | python` envvar leak (the old pipeline never made `PROMPT` available
-  to the python interpreter, so the orchestrator-prompt task-ID fallback
-  never worked). `tool_response` now accepts list-of-content-blocks shape
-  (recent SDK shape). The `AGENT STATUS` block extraction extends to the
-  next H1/H2 heading instead of stopping at the first blank line. Tracker
-  selection now matches the story ID from the orchestrator prompt against
-  tracker filenames, with most-recent-mtime as fallback (the old `ls -t`
-  picked the wrong tracker on multi-story sessions).
-- **`agent-status-check.sh` rewritten.** Removed the `/tmp/agent-status-debug.json`
-  write that the old hook performed on every invocation. Presence check
-  upgraded from "phrase appears anywhere" to "phrase appears in the final
-  ~50 lines AND the block contains a non-empty `Outcome:` or `Verdict:`
-  field". Mid-prose mentions of the literal phrase no longer satisfy the
-  gate. Fail-closed when a response is extractable; fail-open when no
-  response text can be located in the payload (warning to stderr so
-  payload-shape gaps are investigatable).
-- **`squash-merge-verify.sh` rewritten.** `shlex`-based command detection
-  handles `cd repo && git merge --squash …`, `(cd repo; git …)`, env-var
-  prefixes (`X=Y git …`), and `git -c <cfg>` config flags. When the
-  command uses `cd <path>` to position before `git merge`, the implicit
-  cwd is carried forward so the verification runs in the right repo.
-  Staged-count comparison done in python with an int default; no shell
-  `[ "" -gt 0 ]` syntax-error path on `git -C` failure. Dropped the
-  brittle `MERGE_MSG`-file AND-condition; relies on
-  `git diff --name-only --diff-filter=U` alone (the authoritative
-  conflict indicator).
-- **`stop-failure-recovery.sh` + new `stop-failure-marker.sh`.** The
-  inline shell command that used to write the `.stop-failure` marker
-  via `bash -c 'test -f .claude/context/provider-config.md && …'` had
-  a cwd-based gate — if the orchestrator changed directory before the
-  failure, the marker was never written. Replaced by `stop-failure-marker.sh`
-  which uses `hook_workspace_root` to walk up. The recovery hook uses
-  the same walk-up.
-- **Matcher updates in `hooks/hooks.json`:** `tracker-transition-guard`
-  now matches `Write|Edit|MultiEdit`; `sensitive-file-guard` matches
-  `Write|Edit|MultiEdit|NotebookEdit`; the `StopFailure` inline command
-  is replaced with the new `stop-failure-marker.sh`.
-
-### Tests — slice 02
-
-Six new test suites under `tests/hooks/`, all using the same pure-bash
-harness from slice 01:
-
-- `tracker-transition-guard` — 18 cases (legal + illegal + multi-row +
-  MultiEdit + Write + metadata-only).
-- `sensitive-file-guard` — 21 cases (every pattern in the deny-list,
-  `Write`/`Edit`/`MultiEdit`/`NotebookEdit` coverage, negative cases).
-- `tracker-update-reminder` — 10 cases (developer/reviewer outcomes,
-  multi-paragraph block survival, list-shaped response, tracker-by-story
-  selection, no-op cases).
-- `agent-status-check` — 9 cases (presence + Outcome/Verdict requirement,
-  mid-prose mention rejection, payload-shape gap fail-open, no /tmp
-  debug write).
-- `squash-merge-verify` — 10 cases (command form variants, success,
-  empty result warning, nonexistent-repo graceful degradation).
-- `stop-failure-recovery` — 7 cases (marker write/read with workspace
-  walk-up from subdirs, one-shot deletion, outside-workspace no-op).
-
-Slice 02 raises total test coverage from 72 → 147 across 9 suites.
-
-### Hardening — enforcement primitives
-
-- **Shared hook library (`scripts/_hook-lib.sh`)** — every new/rewritten hook
-  now sources a common helper: cached `python3`/`python` probe, single-read
-  payload handling via temp file, `hook_field <dotted-path>` extractor that
-  also joins list-shaped `tool_response` content blocks, `hook_block` /
-  `hook_advise` exit helpers, and a workspace-root walk-up that finds
-  `.claude/context/provider-config.md` from any subdirectory.
-- **Fail-policy inventory (`scripts/README.md`)** — every hook now declares
-  fail-closed vs. fail-open, and the policy is summarised in a table so the
-  contract is reviewable at a glance.
-- **`scripts/_git_argparse.py`** — `shlex`-based parser for `git commit`
-  invocations. Replaces the old single-regex extraction. Handles
-  `git -C <path>` (which the orchestrator emits everywhere), `git -c key=val`,
-  env-var prefixes (`GIT_AUTHOR_DATE=… git …`), chained commands
-  (`cd repo && …`, `(cd repo; …)`), multiple `-m` flags joined with two
-  newlines, `--message=val`, `-F file`, `--amend`, `--allow-empty-message`,
-  `--fixup`/`--squash`/`--reword`, and heredoc bodies passed via
-  `$(cat <<TAG … TAG)` (including `<<-TAG` tab-stripping).
+- **`bash-write-guard` hook** — new `PreToolUse` guard on `Bash` that closes the loophole where shell-driven writes (redirects, `tee`, `cp`, `mv`, `install`, `dd of=…`) bypassed the existing Write/Edit guards. Blocks shell writes that target `ai/` (orchestrator/planner territory) or any sensitive file pattern. When the payload carries subagent identity, applies role-aware rules: reviewers cannot write at all; planners may only write under `ai/`.
+- **Shared hook library (`scripts/_hook-lib.sh`)** — every guard hook now sources a common helper for the python probe, payload reading, dotted-path field extraction (including list-shaped `tool_response` blocks), exit helpers, and workspace-root walk-up. Removes duplicated JSON parsing across eight scripts.
+- **Structural commit-arg parser (`scripts/_git_argparse.py`)** — `shlex`-based parser for `git commit` invocations replaces the old single-regex extractor. Handles `git -C <path>`, `git -c key=val`, env-var prefixes, chained commands (`cd repo && …`, `(cd repo; …)`), multiple `-m` flags, `--message=`, `-F`, `--amend`, and heredoc bodies (including `<<-TAG` tab-stripping).
+- **Fail-policy inventory (`scripts/README.md`)** — every hook now declares fail-closed vs. fail-open in a single table so the contract is reviewable at a glance.
+- **Orchestrator constraint #14 — Conflict-Surfacing Rule.** New rule in `skills/dev-workflow/context/orchestrator-rules.md`: when a command-file step appears to conflict with an orchestrator rule, a hook block, another command file, or discovered state, the orchestrator must stop and surface the conflict to the human — never silently drop the step, invent a workaround (`cp` into a hook-guarded path, `--no-verify`, etc.), or declare itself authoritative over either side. Triggered by a session where the orchestrator silently skipped a Phase 2 commit step by citing rule #8 as an "override" instead of surfacing the contradiction.
 
 ### Fixes
 
-- **`validate-commit-msg.sh` rewritten to fail closed.** The previous
-  regex-based extractor missed `git -C <path> commit`, multiple `-m` flags,
-  `--message=`, `-F`, `--amend`, indented heredocs, and the Phase 5
-  `test-harden` exception — and silently allowed any commit whose form it
-  didn't recognise. The rewrite is structural: parse the full argv with
-  `shlex`, reconstruct the would-be commit message, and refuse the commit if
-  the message cannot be determined (instead of waving it through). Also
-  drops the "description must start lowercase" rule that incorrectly
-  rejected legitimate proper nouns (`AWS`, `URL`, `OAuth`).
-
-### Features
-
-- **`bash-write-guard.sh`** — new `PreToolUse` hook on `Bash` that closes
-  the loophole where shell-driven writes bypassed `sensitive-file-guard.sh`
-  and `tracker-transition-guard.sh`. Blocks three patterns:
-  1. Any redirect/`tee`/`cp`/`mv`/`install`/`dd of=…` whose target lies
-     under `ai/` — the harness's plan and tracker territory is owned by
-     orchestrator/planner Write/Edit calls, never by shell mutations.
-  2. The same set of writes when the target matches a sensitive file
-     pattern (`.env*` including `.env.local`/`.env.production`, `*.pem`,
-     `*.key`, `id_rsa*`, `id_ed25519*`, `*.p12`, `*.pfx`, `*.kdbx`,
-     `*.tfstate*`, `.netrc`, `.npmrc`, `credentials*`, `secrets.*`).
-  3. When the hook payload carries `agent_type` (Claude Code's documented
-     PreToolUse field that is present only inside subagent calls), the
-     guard normalises the namespaced value (e.g. `ai-sdlc-harness:reviewer:
-     reviewer` → `reviewer`) and applies role-aware rules:
-     - **reviewer** — no Bash file writes at all (was previously
-       unenforced: `disallowedTools: Write, Edit` did not prevent
-       `bash -c 'echo … > file'`).
-     - **planner** — Bash writes permitted only under `ai/` (the inverse
-       of rule 1 for planner only, since the planner does template
-       trackers via shell occasionally).
-
-  If subagent identity is unavailable in the payload, rules 1 and 2 still
-  apply unconditionally.
+- **`validate-commit-msg` rewritten to fail closed.** The old regex-based extractor missed `git -C` commits, multiple `-m` flags, `--message=`, `-F`, `--amend`, indented heredocs, and the Phase 5 `test-harden` exception — and silently allowed anything it couldn't parse. The rewrite reconstructs the message structurally and refuses commits whose form is undetermined. Also drops the "description must start lowercase" rule that rejected legitimate proper nouns (`AWS`, `URL`, `OAuth`).
+- **`tracker-transition-guard` rewritten.** Matcher broadened from `Edit`-only to `Write|Edit|MultiEdit`. The hook now applies the edit in-memory, diffs task statuses by ID, and validates every row that changed (the old hook only checked the first emoji). Whole-file `Write` is covered; metadata-only edits (Notes, Commit, Verdict, timestamps) pass through.
+- **`sensitive-file-guard` rewritten.** Matcher broadened to `Write|Edit|MultiEdit|NotebookEdit`. Deny-list extracted into a shared `_sensitive_patterns.py` module (reused by `bash-write-guard`) and expanded — most notably catching `.env.local`/`.env.production` that the old `\.env$` regex missed.
+- **`tracker-update-reminder` rewritten.** Fixes a `PROMPT=… echo … | python` envvar leak that broke the orchestrator-prompt task-ID fallback. Accepts the recent SDK's list-of-content-blocks `tool_response` shape. Tracker selection now matches story ID against tracker filenames (with mtime as fallback) instead of blindly taking the most recent file.
+- **`agent-status-check` rewritten.** Removed the `/tmp/agent-status-debug.json` write that ran on every invocation. Presence check upgraded from "phrase appears anywhere" to "phrase near the response tail with a non-empty `Outcome:` or `Verdict:` field" — mid-prose mentions no longer satisfy the gate. Fails closed on extractable responses; fails open with a stderr warning when no response text is locatable.
+- **`squash-merge-verify` rewritten.** Command detection now `shlex`-aware, handling `cd repo && git merge --squash …`, subshells, env-var prefixes, and `git -c` flags. Implicit cwd from `cd <path>` is carried into the verification. Dropped the brittle `MERGE_MSG`-file AND-condition; relies on `git diff --name-only --diff-filter=U` alone.
+- **`stop-failure-recovery` cwd dependency removed.** The inline marker-writer assumed cwd was the workspace root, so a directory change before failure silently swallowed the marker. Replaced with `stop-failure-marker.sh` using the shared workspace walk-up.
+- **Workflow consistency: Phase 6 / Phase 7 file moves into a code repo now use Read+Write, not `cp`.** `create-pr.md` Step 6 and Step 9, and `review-response.md` Step 9, previously called `cp ai/... <REPO_PATH>/ai/...` to move plan/tracker into the repo in workspace-separated setups. `bash-write-guard` blocks Bash writes to `/ai/` paths by design (the `ai/` tree is owned by Read/Write tool calls). The command files now use the Read + Write tools for those copies; only `git add`/`commit`/`push` remain as shell calls.
+- **Workflow consistency: Phase 2 plan commit is now conditional on workspace == repo.** When the workspace is itself a git repo, the orchestrator commits the plan as before. When the workspace is separate from the code repo, the commit is skipped — the plan stays in the workspace per orchestrator rule #8 and travels into the repo at Phase 6 alongside the tracker. The previous unconditional `git add ai/plans/ && git commit` either failed or pushed the orchestrator into copying the plan into the repo (tripping `bash-write-guard`).
+- **Phase 7 Step 9 creates a new tracker-update commit instead of amending HEAD.** By Phase 7 Step 9, HEAD is the most recent Phase 7 task squash-merge — not the Phase 6 tracker commit — so `commit --amend` would silently rewrite a task commit's tree with tracker content. The replacement uses a new commit on top (fast-forward, no `--force-with-lease`) and keeps the tracker's recorded task SHAs accurate (an autosquash back into the Phase 6 tracker commit would rewrite every Phase 7 task SHA above it). Also adds the previously-missing `git push` — Phase 7 fixes were never reaching the remote PR.
+- **Phase 6 Step 9 force-pushes after amend.** The amend rewrites the tracker commit SHA, and `pr-creator` already pushed the branch in Step 7. The workspace-is-git-repo branch was missing `git push --force-with-lease origin <feature-branch>` (asymmetric with the workspace-not-git branch which had it). Without the push, the remote PR was stale relative to the local tracker commit.
+- **Orchestrator commits now use canonical-form meta Task IDs.** The Phase 2 plan, Phase 6 tracker, and Phase 7 tracker-update commit subjects previously used story-only form (`#<STORY-ID>: …`), which `validate-commit-msg` fail-closes — the only story-only exception is the Phase 5 `test-harden` form. The subjects now use `#TPLAN`, `#TTRACKER`, and `#TPR-RESP` respectively — valid instances of the existing canonical regex, so no hook change was required. Documented in README "Branch & Commit Conventions".
 
 ### Tests
 
-- **`tests/hooks/`** — pure-bash test harness (no `bats` dependency). One
-  test suite per hook with canned JSON payloads piped through the real
-  hook scripts; assertions on exit code and stderr substrings. Suites:
-  `validate-commit-msg` (29 cases — every parser hole called out in the
-  recent review), `bash-write-guard` (30 cases — every blocked pattern
-  plus negative cases for `/dev/null`, `/tmp/`, repo source paths, and
-  the workspace-gate fall-through). Run via `tests/hooks/run.sh`.
-
-### Notes
-
-- This PR is the first slice of a larger review-driven remediation. It
-  ships the enforcement primitives every later workstream depends on
-  (`_hook-lib.sh`, `_git_argparse.py`, the test harness), the highest-leverage
-  parser fix (`validate-commit-msg`), and the highest-leverage missing
-  guard (`bash-write-guard`). Subsequent workstreams — tracker-guard /
-  sensitive-file-guard rewrites, provider capability surface, status-block
-  schema — will arrive in separate PRs.
+- **`tests/hooks/` pure-bash harness** — no `bats` dependency. One suite per hook, canned payloads piped through the real scripts, assertions on exit code and stderr. Suites cover `validate-commit-msg` (32 cases, including the orchestrator meta-ID forms), `bash-write-guard` (30), `tracker-transition-guard` (18), `sensitive-file-guard` (21), `tracker-update-reminder` (10), `agent-status-check` (9), `squash-merge-verify` (10), `stop-failure-recovery` (7) — 150 cases across 9 suites. Run via `tests/hooks/run.sh`.
 
 ---
 

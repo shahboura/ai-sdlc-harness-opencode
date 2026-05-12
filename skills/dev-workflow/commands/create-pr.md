@@ -148,7 +148,7 @@ git -C ai/tasks/ rev-parse --is-inside-work-tree 2>/dev/null
 ```bash
 git add ai/tasks/
 git commit -m "$(cat <<'EOF'
-#<STORY-ID>: add task tracker with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
@@ -157,16 +157,23 @@ EOF
 
 **If the workspace is NOT a git repo** (exits non-zero — workspace is a plain directory):
 
-For each affected repo, copy the tracker and plan into that repo's `ai/` directories, then commit from the repo:
+For each affected repo, copy the tracker and plan into that repo's `ai/` directories, then commit from the repo.
+
+**Do NOT use `cp`.** The `bash-write-guard` hook blocks shell mutations to any path
+containing `/ai/` by design — `ai/` is owned by Read/Write tool calls, never by
+shell-driven mutations. Use the **Read** tool to read each workspace file and the **Write**
+tool to write it to the repo path:
+
+- Read `ai/tasks/<tracker-file>` (workspace) → Write to `<REPO_PATH>/ai/tasks/<tracker-file>`
+- Read `ai/plans/<plan-file>` (workspace)    → Write to `<REPO_PATH>/ai/plans/<plan-file>`
+
+Then commit from the repo:
 
 ```bash
 # For each affected repo at <REPO_PATH>:
-cp ai/tasks/<tracker-file> "<REPO_PATH>/ai/tasks/<tracker-file>"
-cp ai/plans/<plan-file>    "<REPO_PATH>/ai/plans/<plan-file>"
-
 git -C "<REPO_PATH>" add ai/tasks/ ai/plans/
 git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
-#<STORY-ID>: add task tracker and plan with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker and plan with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
@@ -208,13 +215,23 @@ After all PRs are created, set `PR created` to `date -u +"%Y-%m-%d %H:%M UTC"` i
 ```bash
 git add ai/tasks/
 git commit --amend --no-edit
+git push --force-with-lease origin <feature-branch>
 ```
+
+The amend rewrites the tracker commit's SHA, so the remote (already pushed in Step 7 via
+`pr-creator`) must be force-pushed to stay in sync. `--force-with-lease` is safe because
+no other commits should have landed on the remote between Step 7 and now.
 
 **If the workspace is NOT a git repo** (tracker was copied into the repo in Step 6):
 
+Sync the updated tracker back into the repo using the **Read + Write** tools (not `cp` —
+the `bash-write-guard` hook blocks Bash writes to `ai/` paths):
+
+- Read `ai/tasks/<tracker-file>` (workspace) → Write to `<REPO_PATH>/ai/tasks/<tracker-file>`
+
+Then amend the repo's tracker commit and force-push:
+
 ```bash
-# Sync the updated tracker back into the repo, then amend:
-cp ai/tasks/<tracker-file> "<REPO_PATH>/ai/tasks/<tracker-file>"
 git -C "<REPO_PATH>" add ai/tasks/
 git -C "<REPO_PATH>" commit --amend --no-edit
 git -C "<REPO_PATH>" push --force-with-lease origin <feature-branch>
