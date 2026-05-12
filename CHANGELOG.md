@@ -4,6 +4,88 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ---
 
+## [Unreleased]
+
+### Hardening — enforcement primitives
+
+- **Shared hook library (`scripts/_hook-lib.sh`)** — every new/rewritten hook
+  now sources a common helper: cached `python3`/`python` probe, single-read
+  payload handling via temp file, `hook_field <dotted-path>` extractor that
+  also joins list-shaped `tool_response` content blocks, `hook_block` /
+  `hook_advise` exit helpers, and a workspace-root walk-up that finds
+  `.claude/context/provider-config.md` from any subdirectory.
+- **Fail-policy inventory (`scripts/README.md`)** — every hook now declares
+  fail-closed vs. fail-open, and the policy is summarised in a table so the
+  contract is reviewable at a glance.
+- **`scripts/_git_argparse.py`** — `shlex`-based parser for `git commit`
+  invocations. Replaces the old single-regex extraction. Handles
+  `git -C <path>` (which the orchestrator emits everywhere), `git -c key=val`,
+  env-var prefixes (`GIT_AUTHOR_DATE=… git …`), chained commands
+  (`cd repo && …`, `(cd repo; …)`), multiple `-m` flags joined with two
+  newlines, `--message=val`, `-F file`, `--amend`, `--allow-empty-message`,
+  `--fixup`/`--squash`/`--reword`, and heredoc bodies passed via
+  `$(cat <<TAG … TAG)` (including `<<-TAG` tab-stripping).
+
+### Fixes
+
+- **`validate-commit-msg.sh` rewritten to fail closed.** The previous
+  regex-based extractor missed `git -C <path> commit`, multiple `-m` flags,
+  `--message=`, `-F`, `--amend`, indented heredocs, and the Phase 5
+  `test-harden` exception — and silently allowed any commit whose form it
+  didn't recognise. The rewrite is structural: parse the full argv with
+  `shlex`, reconstruct the would-be commit message, and refuse the commit if
+  the message cannot be determined (instead of waving it through). Also
+  drops the "description must start lowercase" rule that incorrectly
+  rejected legitimate proper nouns (`AWS`, `URL`, `OAuth`).
+
+### Features
+
+- **`bash-write-guard.sh`** — new `PreToolUse` hook on `Bash` that closes
+  the loophole where shell-driven writes bypassed `sensitive-file-guard.sh`
+  and `tracker-transition-guard.sh`. Blocks three patterns:
+  1. Any redirect/`tee`/`cp`/`mv`/`install`/`dd of=…` whose target lies
+     under `ai/` — the harness's plan and tracker territory is owned by
+     orchestrator/planner Write/Edit calls, never by shell mutations.
+  2. The same set of writes when the target matches a sensitive file
+     pattern (`.env*` including `.env.local`/`.env.production`, `*.pem`,
+     `*.key`, `id_rsa*`, `id_ed25519*`, `*.p12`, `*.pfx`, `*.kdbx`,
+     `*.tfstate*`, `.netrc`, `.npmrc`, `credentials*`, `secrets.*`).
+  3. When the hook payload carries `agent_type` (Claude Code's documented
+     PreToolUse field that is present only inside subagent calls), the
+     guard normalises the namespaced value (e.g. `ai-sdlc-harness:reviewer:
+     reviewer` → `reviewer`) and applies role-aware rules:
+     - **reviewer** — no Bash file writes at all (was previously
+       unenforced: `disallowedTools: Write, Edit` did not prevent
+       `bash -c 'echo … > file'`).
+     - **planner** — Bash writes permitted only under `ai/` (the inverse
+       of rule 1 for planner only, since the planner does template
+       trackers via shell occasionally).
+
+  If subagent identity is unavailable in the payload, rules 1 and 2 still
+  apply unconditionally.
+
+### Tests
+
+- **`tests/hooks/`** — pure-bash test harness (no `bats` dependency). One
+  test suite per hook with canned JSON payloads piped through the real
+  hook scripts; assertions on exit code and stderr substrings. Suites:
+  `validate-commit-msg` (29 cases — every parser hole called out in the
+  recent review), `bash-write-guard` (30 cases — every blocked pattern
+  plus negative cases for `/dev/null`, `/tmp/`, repo source paths, and
+  the workspace-gate fall-through). Run via `tests/hooks/run.sh`.
+
+### Notes
+
+- This PR is the first slice of a larger review-driven remediation. It
+  ships the enforcement primitives every later workstream depends on
+  (`_hook-lib.sh`, `_git_argparse.py`, the test harness), the highest-leverage
+  parser fix (`validate-commit-msg`), and the highest-leverage missing
+  guard (`bash-write-guard`). Subsequent workstreams — tracker-guard /
+  sensitive-file-guard rewrites, provider capability surface, status-block
+  schema — will arrive in separate PRs.
+
+---
+
 ## [1.1.1] — 2026-04-25
 
 ### Features
