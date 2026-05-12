@@ -49,7 +49,7 @@ That's it. `/dev-workflow` and `/story-workflow` are now available.
 |-----------|-----|
 | **Claude Code** | The CLI that runs this harness. Install from [claude.ai/code](https://claude.ai/code) |
 | **Git** | Branch management, worktree isolation, commits |
-| **Python 3** | All hooks use Python for JSON parsing (no `jq` dependency) |
+| **Python 3** | **Required** — every guard hook (`validate-commit-msg`, `bash-write-guard`, tracker guards, sensitive-file guard, status-check) parses the hook JSON payload in Python, and the commit-message validator uses Python's `shlex` to tokenize git commands. If `python3`/`python` is not on `PATH`, the shared hook library exits at source time and the underlying tool call is blocked. Pre-installed on macOS and every modern Linux distro; Windows users should install from [python.org](https://www.python.org/downloads/) before running `/init-workspace`. |
 | **Provider MCP server** *(optional)* | One of: ADO, Jira, GitLab, GitHub, or Zoho MCP. Required if you use a provider with MCP integration. The `gh-cli` and `glab-cli` git providers don't need an MCP server. The `local-markdown` provider needs no MCP server at all. Run `/init-workspace` to select. |
 
 Target repos must be **cloned locally** — this harness does not clone them. Each repo should be on its default branch and reasonably current before running `/init-workspace`. No language prerequisites required; toolchains are discovered.
