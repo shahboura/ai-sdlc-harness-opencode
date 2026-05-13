@@ -29,25 +29,44 @@ LANGUAGE CONTEXT:
 
 ## REPO_CTX
 
-Include in **initial (non-rework)** agent launches. Omit when re-invoking in an existing worktree (use `WORKTREE_CTX` instead).
+Include **only** in the worktree-failed fallback case (the orchestrator's Step 1 sub-step 5 worktree-creation attempt failed twice and the agent must work directly on the feature branch). Carries a `worktree_failed: true` flag so the agent knows it is in fallback mode. For every other launch — initial OR rework — use `WORKTREE_CTX`.
 
 ```
-REPO CONTEXT:
+REPO CONTEXT (worktree-failed fallback — work directly on the feature branch):
 - Repo: <repo-name>
 - Repo path: <REPO_PATH>
 - Feature branch: <FEATURE_BRANCH>
 - Feature HEAD: <FEATURE_HEAD>
+- worktree_failed: true
 ```
 
 ## WORKTREE_CTX
 
-Include when **handing off or re-invoking** an agent in an existing worktree (e.g. tester → developer handoff, or rework after a Reviewer rejection). Replaces `REPO_CTX`.
+Include in **every initial agent launch and every re-invocation** in the lane's worktree. The orchestrator owns worktree creation (Step 1 sub-step 5 of `develop.md`) and inlines the resulting path / branch into the prompt — the agent never creates its own worktree.
 
 ```
-WORKTREE DETAILS (do NOT create a new worktree):
-- Worktree path: <from prior agent AGENT STATUS>
-- Worktree branch: <from prior agent AGENT STATUS>
+WORKTREE DETAILS (worktree already exists — do NOT create a new one):
+- Worktree path: <WORKTREE_PATH from orchestrator Step 1>
+- Worktree branch: <WORKTREE_BRANCH from orchestrator Step 1>
 ```
+
+On the tester → developer handoff and on rework after a Reviewer rejection, the same `WORKTREE_PATH` / `WORKTREE_BRANCH` values are reused — the orchestrator never recreates the worktree mid-task.
+
+## PATTERN_HINTS_CTX
+
+Include in **Phase 3 Tester (`auto-tdd`) launches** when the plan has a `## Test Pattern References` section that lists patterns for the current task. Skip if the section is absent or the task's pattern list is empty.
+
+```
+TEST PATTERN HINTS (from the plan's Test Pattern References section):
+- <repo-relative-path-1> — <one-line rationale>
+- <repo-relative-path-2> — <one-line rationale>
+
+Consult these existing files for naming, structure, and fixture patterns. If they do
+not apply (different framework, different mutation type, etc.), fall back to your test
+framework's defaults — do NOT browse the tree looking for alternatives.
+```
+
+The "do NOT browse the tree" line is critical: it prevents the Tester from re-doing pattern-discovery research the Planner already attempted bounded-ly at plan time. If no hints fit, the framework default is the correct answer.
 
 ## CONTRACTS_CTX
 

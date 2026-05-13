@@ -182,11 +182,54 @@ For each task T(n) in the task breakdown, produce a Test Outline that lists the 
 - Mark `test-required: false` for tasks with no observable behaviour: pure-config changes, dependency version bumps, file renames, scaffolding.
 - The Test Outline is presented to the human at GATE #1 alongside the plan and must be approved before Phase 3 begins.
 
+### 5b. Test Pattern References (Bounded Pattern-Hint Discovery)
+
+For every task with `test-required: true`, produce a short list of 0–2 existing test files in the target repo that would be useful patterns for the Tester to consult. The Tester reads these *instead of* roaming the tree looking for analogous tests at Phase 3 time — the FE-008 retrospective showed unbounded pattern-discovery research is a primary cause of sub-agent watchdog stalls.
+
+**Heuristic — strictly filename-globbing only. No semantic comparison, no advisor calls, no reading file contents.** The Planner runs at most 5 globs per task and returns at most 2 matches, ranked by file modification time (newest first). If no globs match, the task's pattern list is empty.
+
+**Procedure for each `test-required: true` task:**
+
+1. **Determine the repo's test root** from `language-config.md` for the target repo (`test_root` field if present, else the language's default — `tests/` for Python, `test/` for Java, `__tests__` or `tests/` for JS/TS, `*_test.go` siblings for Go, etc.).
+
+2. **Extract 1–3 distinctive tokens from the task title** — pick noun phrases that describe the *what*, not the *how*. Examples:
+   - Task title "Add drawer for subscription edit" → tokens `drawer`, `subscription`
+   - Task title "Refactor token-refresh service to async" → tokens `token-refresh`, `refresh`
+   - Task title "Wire up Service Bus consumer for billing events" → tokens `service-bus`, `billing`
+   - One-word generic titles ("Add validation", "Fix bug") → fewer tokens; expect zero matches and don't force it.
+
+3. **Run filename globs** against the test root using these patterns (in this order, stopping after 5 globs total per task):
+   - `<test_root>/**/*<token>*.spec.*` (e.g. `tests/**/*drawer*.spec.ts`)
+   - `<test_root>/**/*<token>*.test.*`
+   - `<test_root>/**/test_*<token>*.*` (Python convention)
+   - `<test_root>/**/*<token>*_test.*` (Go convention)
+   - `<test_root>/**/harden-*<token>*.*` (story-prefixed pattern, if used by the repo)
+
+4. **Rank and trim**: collect all matches, dedupe, sort by modification time (newest first via `stat -c %Y` on Linux or `stat -f %m` on macOS, or `git log -1 --format=%ct <file>` for a Git-anchored fallback), and keep the top 2.
+
+5. **Output format** — per task in the plan document:
+   ```markdown
+   ### T<n>: <task title>
+   Patterns:
+   - <repo-relative path> — matched on `<token>`, modified <YYYY-MM-DD>
+   - <repo-relative path> — matched on `<token>`, modified <YYYY-MM-DD>
+   ```
+   If zero matches: `Patterns: (none — Tester will use test framework defaults)`.
+
+**Bounds (non-negotiable):**
+
+- Globbing is finite — `Glob` returns immediately or not at all; no recursion past the test root.
+- At most 5 globs × 1 candidate-token sweep per task. The Planner does NOT keep retrying with broader patterns. "No match" is a valid answer.
+- **The Planner does NOT read the contents of any candidate file.** Filename match is the entire signal. Rationale: file-content semantic comparison is what stalled the Tester at Phase 3 in the FE-008 retro; relocating that to Phase 2 just shifts the stall earlier.
+- The output is a *suggestion*. The human reviews these patterns at GATE #1 and may strike or replace any line before approving the plan.
+
+The approved Patterns list per task is inlined verbatim into the Tester's prompt as a `TEST PATTERN HINTS` block (see `prompt-templates.md` → `PATTERN_HINTS_CTX`).
+
 ### 6. Save Plan Document
 
 **Before saving**, run these commands:
 ```bash
-date +%Y-%m-%d   # capture as TODAY
+date -u +%Y-%m-%d   # capture as TODAY (UTC — canonical per orchestrator-rules #14)
 # Derive WORKSPACE_ROOT: it is the directory whose .claude/context/ holds provider-config.md
 # You already read repos-paths.md from .claude/context/ in step 1b — use its parent's parent
 ```
@@ -201,19 +244,20 @@ The plan document must include:
 4. **Cross-repo contracts** (if multi-repo: full contract definitions for all inter-repo boundaries — API signatures, message schemas, shared DTOs)
 5. Selected design approach (name, summary, and why it was chosen)
 6. **Test Outline** (per-task list of test names + intent; `test-required` flag per task)
-7. Task breakdown table (with Repo column)
-8. Class diagram
-9. Flow chart
-10. Sequence diagram
-11. Conventions reference (link to `.claude/context/conventions.md` — the single authoritative conventions file)
-12. Risk/assumptions section
-13. Attribution footer (last line): `🤖 Generated with [Claude Code](https://claude.ai/claude-code)`
+7. **Test Pattern References** (per-task list of 0–2 existing test files to consult; produced by Step 5b. The human reviews these at GATE #1 and may edit them before approval.)
+8. Task breakdown table (with Repo column)
+9. Class diagram
+10. Flow chart
+11. Sequence diagram
+12. Conventions reference (link to `.claude/context/conventions.md` — the single authoritative conventions file)
+13. Risk/assumptions section
+14. Attribution footer (last line): `🤖 Generated with [Claude Code](https://claude.ai/claude-code)`
 
 ### 7. Create Task Tracker
 
 **Before saving**, run this command and capture the output as `TODAY`:
 ```bash
-date +%Y-%m-%d
+date -u +%Y-%m-%d   # UTC — canonical per orchestrator-rules #14
 ```
 Save to: `$WORKSPACE_ROOT/ai/tasks/TODAY_<story-id>_<slug>_${CLAUDE_SESSION_ID}.md`
 where TODAY is the output of the command above and WORKSPACE_ROOT is the same absolute path
@@ -302,9 +346,11 @@ these entries — they are recorded for human review at GATE #2.)*
 
 ### 8. Present for Approval
 
-Display the full plan — including the Test Outline — to the human user and explicitly request:
+Display the full plan — including the Test Outline and the Test Pattern References — to the human user. When summarising, call out the Pattern References explicitly so the human knows to scan them:
 
-> **🚦 GATE: Please review this plan and Test Outline and respond with APPROVED to proceed, or describe the changes you'd like.**
+> **🚦 GATE: Please review this plan, the Test Outline, and the Test Pattern References (per-task list of existing test files the Tester will consult) and respond with APPROVED to proceed, or describe the changes you'd like.**
+>
+> *Patterns are filename-glob suggestions. If any look irrelevant, strike them — empty pattern lists are fine; the Tester will fall back to framework defaults.*
 
 Do NOT proceed until receiving approval.
 

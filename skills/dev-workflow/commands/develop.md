@@ -88,44 +88,64 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
 
 4. **Read the task's `test-required` flag** from the tracker's Notes column.
 
+5. **Create the worktree** (orchestrator-side — per orchestrator-rules #3, the orchestrator
+   handles all git operations including worktree creation):
+
+   ```bash
+   UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
+          || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
+   WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
+   WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
+   if git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"; then
+     WORKTREE_FAILED=false
+   else
+     # Retry once — the most common failure (`could not lock config file .git/config: File exists` on Windows) is transient
+     if git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"; then
+       WORKTREE_FAILED=false
+     else
+       WORKTREE_FAILED=true
+     fi
+   fi
+   ```
+
+   Store `WORKTREE_PATH` and `WORKTREE_BRANCH` in the lane state immediately so a resumption
+   can find them even before the agent reports. Doing creation here (not inside the agent)
+   eliminates the pre-worktree stall mode — if creation succeeds, the worktree is guaranteed
+   to exist on disk before any agent launches; if it fails, the orchestrator picks the fallback
+   deterministically.
+
 **If `test-required: true` → Launch @tester (TDD path):**
 
 Launch **@tester** with `run_in_background: true`, `name: "tester-<repo-name>"`, and `mode: "auto-tdd"`:
 
    ```
    @tester Write failing tests for task T<n> of Story $ARGUMENTS (auto-tdd mode).
+   The worktree has already been created for you — DO NOT create another one.
    Commit test code only — do NOT commit the task tracker.
    Do NOT write any production code.
-   Report your worktree path, branch, and commit hash in your AGENT STATUS.
+   Report your commit hash in your AGENT STATUS.
 
    [Include LANGUAGE_CTX — omit format-cmd]
-   [Include REPO_CTX]
+   [Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`]
+   [Include PATTERN_HINTS_CTX from the plan's Test Pattern References section if present]
 
    TEST OUTLINE FOR T<n> (from approved plan):
    <Copy the Test Outline section for this task exactly as written in the plan>
 
    Instructions:
-   1. Create a worktree with a fresh branch — NEVER check out the feature branch directly
-      (Git refuses it when already checked out in the main worktree):
-      ```bash
-      UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
-             || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
-      WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
-      WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
-      git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"
-      ```
-      If worktree creation fails, report it in AGENT STATUS.
-   2. Implement EXACTLY the tests listed in the Test Outline above — no more, no less.
-   3. Run the test command. Confirm each new test FAILS (red). Acceptable failure: assertion
+   1. Implement EXACTLY the tests listed in the Test Outline above — no more, no less.
+      Work inside the provided worktree (or directly on the feature branch if
+      `worktree_failed: true`).
+   2. Run the test command. Confirm each new test FAILS (red). Acceptable failure: assertion
       error or "type/method not found" (expected — impl doesn't exist yet). NOT acceptable:
       compile errors in test code itself (wrong syntax, wrong test framework usage).
-   4. Commit with co-author trailer — test code only:
+   3. Commit with co-author trailer — test code only:
       ```
       #<STORY-ID> #T<n> test: <slug>
 
       Co-Authored-By: Claude Code <noreply@anthropic.com>
       ```
-   5. Report `test_commit` hash and the list of red tests in AGENT STATUS.
+   4. Report `test_commit` hash and the list of red tests in AGENT STATUS.
    ```
 
 Mark lane as `phase: "testing"`.
@@ -137,15 +157,16 @@ Launch **@developer** with `run_in_background: true`, `name: "developer-<repo-na
    ```
    @developer Implement task T<n> for Story $ARGUMENTS.
    This task is test-required: false — no pre-written tests exist. Implement production code only.
+   The worktree has already been created for you — DO NOT create another one.
    Commit production code only — do NOT commit the task tracker.
-   Report your worktree path, branch, and commit hash in your AGENT STATUS.
+   Report your commit hash in your AGENT STATUS.
 
    [Include LANGUAGE_CTX — omit test-cmd]
-   [Include REPO_CTX]
+   [Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`]
    [Include CONTRACTS_CTX if multi-repo]
 
-   Create a worktree in this repo and work inside it. If worktree creation fails,
-   report it in your AGENT STATUS and work directly on the feature branch.
+   Work inside the provided worktree (or directly on the feature branch if
+   `worktree_failed: true`).
    ```
 
 Mark lane as `phase: "developing"`.
@@ -263,9 +284,13 @@ Parse the `📋 AGENT STATUS` block from the developer.
 **If `Outcome: BLOCKED`:**
 - Present blocker to human for resolution.
 
-**If `Next action: "worktree failed — retry without isolation"`:**
-- Re-invoke developer without worktree instructions. Developer works directly on the
-  feature branch in the repo.
+> **Note:** The agent-side `Next action: "worktree failed — retry without isolation"`
+> branch from earlier versions is no longer reachable — the orchestrator creates
+> the worktree in Step 1 (sub-step 5) before any agent launch, so worktree-creation
+> failures are handled deterministically before the agent runs. If an agent reports
+> this status anyway (a legacy or out-of-date agent definition), treat it as a
+> warning and proceed; the worktree should already exist or `worktree_failed: true`
+> should already be in the prompt.
 
 #### Step 4: Handle Reviewer Completion
 

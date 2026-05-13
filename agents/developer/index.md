@@ -41,27 +41,17 @@ LANGUAGE CONTEXT
 Read the conventions file before starting. Follow all conventions in it without exception.
 If no LANGUAGE CONTEXT is provided, ask the orchestrator before proceeding.
 
-## Repo-Aware Worktree Isolation
+## Working in the Provided Worktree
 
-You receive a **REPO_PATH** from the orchestrator — this is the local path to the target
-git repo. You create and manage your own worktree in that repo.
+The orchestrator creates the worktree before launching you (per `develop.md` Step 1 sub-step 5) and inlines its location into your prompt via a **WORKTREE DETAILS** block:
 
-### Worktree Setup
-
-When starting a task, create a worktree in the target repo:
-```bash
-# Generate a collision-safe worktree branch name using a short UUID
-# uuidgen is available on macOS and most Linux distros; python3 is the fallback
-UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
-       || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
-WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
-WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
-
-# Create the worktree from the feature branch
-git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"
+```
+WORKTREE DETAILS (worktree already exists — do NOT create a new one):
+- Worktree path: <absolute path>
+- Worktree branch: <branch-name>
 ```
 
-Then work entirely within `$WORKTREE_PATH` — all reads, writes, edits, and builds happen there.
+Read those values from your prompt and work entirely within `Worktree path` — all reads, writes, edits, and builds happen there. You do **NOT** run `git worktree add`. If you find yourself about to, stop — the worktree already exists.
 
 ### What this means:
 - You have **full read/write/edit access** to all files in your worktree.
@@ -70,14 +60,8 @@ Then work entirely within `$WORKTREE_PATH` — all reads, writes, edits, and bui
   single commit after review approval. Multiple commits per task are fine.
 - You commit **production code only** — the orchestrator owns the task tracker.
 
-### Git Error Fallback:
-If worktree creation fails (e.g., `error: could not lock config file .git/config: File exists`
-on Windows), report the error in your AGENT STATUS block with `Worktree: failed (<error>)`.
-Set `Next action: "worktree failed — retry without isolation"`. The orchestrator will
-re-invoke you without worktree isolation.
-
-### Working Without Worktree (Fallback Mode):
-Work directly on the feature branch in `<REPO_PATH>`.
+### Fallback Mode (worktree-failed):
+If the orchestrator's worktree-creation attempt failed twice, it inlines a **REPO CONTEXT** block with `worktree_failed: true` instead of WORKTREE DETAILS. In that case, work directly on the feature branch at `Repo path` — do not attempt to create a worktree yourself. Report `Worktree: not used (direct branch)` in your AGENT STATUS.
 
 ## Your Responsibilities
 
@@ -193,8 +177,8 @@ decide the next action. No exceptions.
 - Repo path: <local repo path provided by orchestrator>
 - Language: <language from LANGUAGE CONTEXT>
 - Outcome: <SUCCESS | DONE_WITH_CONCERNS | PARTIAL | FAILED | BLOCKED>
-- Worktree: <path-to-worktree, or "failed (<error>)", or "not used (direct branch)">
-- Worktree branch: <branch-name, or "n/a">
+- Worktree: <path from WORKTREE DETAILS, or "not used (direct branch)" if worktree_failed: true>
+- Worktree branch: <branch from WORKTREE DETAILS, or "n/a" if worktree_failed: true>
 - Build result: <PASS (0 warnings) | FAIL (N errors, M warnings)>
 - Build attempts: <1 | 2 | 3>
 - Commit: <hash, or "none">
@@ -202,7 +186,7 @@ decide the next action. No exceptions.
 - Self-review: <PASS | FAIL — if FAIL, list which checks failed and what was fixed>
 - Concerns: <description of doubts about correctness, or "none">
 - Blockers: <description, or "none">
-- Next action: <"ready for review" | "needs retry" | "escalate to human" | "worktree failed — retry without isolation">
+- Next action: <"ready for review" | "needs retry" | "escalate to human">
 ```
 
 **Outcome definitions:**

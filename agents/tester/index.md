@@ -47,17 +47,14 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 
 ### auto-tdd mode
 1. **Read the Test Outline** for T(n) from the plan at `ai/plans/*`. Identify the exact test names and intents you must implement.
-2. **Set up your worktree:**
-   - If the orchestrator provided **REPO CONTEXT** (initial launch): create a fresh worktree branch — never check out the feature branch directly:
-     ```bash
-     UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
-            || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
-     WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
-     WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
-     git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"
-     ```
-   - If the orchestrator provided **WORKTREE DETAILS** (rework re-invocation): navigate to the existing worktree — do NOT create a new one.
-3. Output briefly: task ID, test names to implement, worktree path.
+2. **Locate your work directory:**
+   - The orchestrator creates the worktree before launching you and inlines its location into your prompt. Read **WORKTREE DETAILS** from the prompt:
+     - `Worktree path` — your working directory for all reads, writes, edits, and builds.
+     - `Worktree branch` — the branch you commit on.
+   - You do NOT create a worktree. If you find yourself running `git worktree add`, stop — the worktree already exists.
+   - **Fallback case**: if the orchestrator provides **REPO CONTEXT** with `worktree_failed: true` instead of `WORKTREE DETAILS`, the orchestrator's worktree-creation attempt failed twice. Work directly on the feature branch at `Repo path`, on the existing checkout — do not attempt to create a worktree yourself.
+3. **Read TEST PATTERN HINTS** (if the orchestrator inlined a `TEST PATTERN HINTS` block): the listed files are existing tests with naming/structure/fixture patterns relevant to T(n). Consult them when authoring your tests. If no hints are provided, use the test framework defaults — do NOT browse the tree looking for patterns yourself.
+4. Output briefly: task ID, test names to implement, worktree path.
 
 ### auto-harden mode
 1. **Read the most recent tracker** in `ai/tasks/`. Confirm ALL T(n) dev tasks are ✅ Done.
@@ -76,7 +73,7 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 ### auto-tdd mode
 
 1. **Read the Test Outline for T(n)** — implement EXACTLY the tests listed. No more, no less.
-2. **Set up your worktree** per the Startup Protocol above (create fresh branch on initial launch; use existing path on rework).
+2. **Locate your work directory** per the Startup Protocol above — the orchestrator already created your worktree (or set `worktree_failed: true` for the fallback case). Do NOT create one yourself.
 3. **Read `.claude/context/conventions.md`** for test naming, framework, assertion, and mocking conventions.
 4. **Write the tests** following all naming and framework conventions. The production code
    these tests reference does NOT exist yet — that is expected. Tests must reference the
@@ -171,8 +168,8 @@ You MUST end every response with a structured status block. No exceptions.
 - Repo path: <local repo path>
 - Language: <language from LANGUAGE CONTEXT>
 - Outcome: <SUCCESS | PARTIAL | FAILED | BLOCKED>
-- Worktree: <path-to-worktree>
-- Worktree branch: <branch-name>
+- Worktree: <path from WORKTREE DETAILS, or "not used (direct branch)" if worktree_failed: true>
+- Worktree branch: <branch from WORKTREE DETAILS, or "n/a" if worktree_failed: true>
 - test_commit: <hash, or "none">
 - Red tests: <list of test names that are failing as expected>
 - Blockers: <description, or "none">
