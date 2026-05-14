@@ -24,7 +24,7 @@ Read the most recent tracker file. If no tracker files exist, report: "No active
 
 ### Step 2: Extract Story Metadata
 
-From the tracker filename (`<date>_<story-id>_<slug>_<session>.md`), extract:
+From the tracker filename (`<date>_<story-id>_<slug>.md`), extract:
 - **Story ID**
 - **Date started**
 - **Slug** (brief description)

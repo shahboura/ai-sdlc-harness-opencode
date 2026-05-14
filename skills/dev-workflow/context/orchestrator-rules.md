@@ -189,7 +189,6 @@ Scan for these error markers in agent responses (especially from the Planner):
 
 - If a session ends mid-workflow, the task tracker preserves state.
 - The next session reads the tracker and resumes from the correct point.
-- The `${CLAUDE_SESSION_ID}` in the tracker filename prevents cross-session collisions.
 - The `inject-tracker-state` hook automatically loads tracker state when agents start.
 
 ### API Failure Recovery

@@ -324,7 +324,7 @@ The plan document must include:
 ```bash
 date -u +%Y-%m-%d   # UTC — canonical per orchestrator-rules #14
 ```
-Save to: `$WORKSPACE_ROOT/ai/tasks/TODAY_<story-id>_<slug>_${CLAUDE_SESSION_ID}.md`
+Save to: `$WORKSPACE_ROOT/ai/tasks/TODAY_<story-id>_<slug>.md`
 where TODAY is the output of the command above and WORKSPACE_ROOT is the same absolute path
 derived in Step 6.
 
