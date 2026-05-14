@@ -78,7 +78,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "tester",
+        "matcher": "ai-sdlc-tester",
         "hooks": [
           {
             "type": "command",

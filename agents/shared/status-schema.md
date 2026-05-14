@@ -14,7 +14,7 @@ Every status block MUST contain:
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `Agent:` | enum | One of `planner`, `developer`, `tester`, `reviewer`. Used by `agent-status-check` for per-agent validation when `agent_type` is missing from the SubagentStop payload. |
+| `Agent:` | enum | One of `ai-sdlc-planner`, `ai-sdlc-developer`, `ai-sdlc-tester`, `ai-sdlc-reviewer`. Used by `agent-status-check` for per-agent validation when `agent_type` is missing from the SubagentStop payload. |
 | `Phase:` | enum | `1`, `2`, `3`, `5`, `6`, or `7`. The phase the agent ran under. |
 | `Story:` | string | The story ID display form (e.g. `#12345`, `PROJ-123`, or a local-markdown filename without extension). |
 | `Outcome:` | enum | `SUCCESS \| PARTIAL \| FAILED \| BLOCKED`. Reviewers additionally use `DONE_WITH_CONCERNS` in Phase 3/5. |

@@ -1,5 +1,5 @@
 ---
-name: planner
+name: ai-sdlc-planner
 description: >
   [HARNESS INTERNAL — do not invoke directly] Requirements analyst and solution architect,
   activated exclusively by the ai-sdlc-harness dev-workflow orchestrator for Phase 1
@@ -105,7 +105,7 @@ You MUST end every response with a structured status block. The orchestrator use
 
 ```
 📋 AGENT STATUS
-- Agent: planner
+- Agent: ai-sdlc-planner
 - Phase: <1 | 2>
 - Story: #<STORY-ID>
 - Outcome: <SUCCESS | PARTIAL | FAILED | BLOCKED>

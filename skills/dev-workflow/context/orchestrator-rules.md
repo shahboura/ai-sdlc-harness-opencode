@@ -15,12 +15,12 @@ These rules apply to ALL phases of the dev-workflow. Individual command files mu
    - Make architectural decisions
 
 2. **ALWAYS delegate to the correct agent.** Every phase has a designated agent:
-   - Phase 1 & 2: `@planner` (requirements analysis, plan generation, file creation)
-   - Phase 3: `@developer` (implementation) and `@reviewer` (code review)
+   - Phase 1 & 2: `@ai-sdlc-planner` (requirements analysis, plan generation, file creation)
+   - Phase 3: `@ai-sdlc-developer` (implementation) and `@ai-sdlc-reviewer` (code review)
    - Phase 4: orchestrator only reads tracker and presents summary
-   - Phase 5: `@tester` (test writing) and `@reviewer` (test review)
+   - Phase 5: `@ai-sdlc-tester` (test writing) and `@ai-sdlc-reviewer` (test review)
    - Phase 6: orchestrator presents summary, then uses `pr-creator` skill
-   - Phase 7: `@reviewer` (pr-comment-analysis mode), `@planner` (pr-response-tasks mode), then re-enter Phase 3 loop for new tasks
+   - Phase 7: `@ai-sdlc-reviewer` (pr-comment-analysis mode), `@ai-sdlc-planner` (pr-response-tasks mode), then re-enter Phase 3 loop for new tasks
 
 3. **The orchestrator MAY only:**
    - Run git commands, including `git -C <repo-path>` for multi-repo operations (branch creation, merge from worktrees, branch cleanup)
@@ -165,7 +165,7 @@ After **every** Planner agent invocation that involves writing plan or tracker f
 1. Log the error details.
 2. If the path was wrong (blocked by hook), correct the path and re-invoke the Planner with explicit instructions:
    ```
-   @planner Save the plan to <WORKSPACE_ROOT>/ai/plans/<correct-filename>.
+   @ai-sdlc-planner Save the plan to <WORKSPACE_ROOT>/ai/plans/<correct-filename>.
    Use the absolute workspace path — never a code-repo path. Verify the
    file was saved by reading it back.
    ```

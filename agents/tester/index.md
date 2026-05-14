@@ -1,5 +1,5 @@
 ---
-name: tester
+name: ai-sdlc-tester
 description: >
   [HARNESS INTERNAL — do not invoke directly] Test implementation specialist, activated
   exclusively by the ai-sdlc-harness dev-workflow orchestrator during Phase 3 (auto-tdd mode)
@@ -169,7 +169,7 @@ You MUST end every response with a structured status block. No exceptions. See `
 
 ```
 📋 AGENT STATUS
-- Agent: tester
+- Agent: ai-sdlc-tester
 - Mode: auto-tdd
 - Phase: 3
 - Story: #<STORY-ID>
@@ -190,7 +190,7 @@ You MUST end every response with a structured status block. No exceptions. See `
 
 ```
 📋 AGENT STATUS
-- Agent: tester
+- Agent: ai-sdlc-tester
 - Mode: auto-harden
 - Phase: 5
 - Story: #<STORY-ID>

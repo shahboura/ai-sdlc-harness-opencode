@@ -2,7 +2,7 @@
 # ---
 # name: tester-activation-guard
 # event: SubagentStart
-# matcher: "tester"
+# matcher: "ai-sdlc-tester"
 # scope: workspace
 # blocking: true
 # policy: fail-closed on invalid tracker state; mode-aware (auto-tdd vs auto-harden)

@@ -33,7 +33,7 @@ print(json.dumps({
 _well_formed_developer_block='Some prose.
 
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Phase: 3
 - Story: #123
 - Outcome: SUCCESS
@@ -44,7 +44,7 @@ _well_formed_developer_block='Some prose.
 _well_formed_reviewer_block='Review done.
 
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: 3
 - Story: #123
 - Verdict: APPROVED
@@ -70,7 +70,7 @@ test_allow_when_outcome_and_verdict_both_present() {
     local resp='Output.
 
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Outcome: SUCCESS
 - Verdict: APPROVED
 - Next action: orchestrator: merge and proceed
@@ -128,7 +128,7 @@ test_block_outcome_and_verdict_both_absent() {
     local resp='Output.
 
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Next action: ready for review
 '
     assert_hook_blocks "$HOOK" \
@@ -141,7 +141,7 @@ test_block_outcome_present_but_empty() {
     local resp='Output.
 
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Outcome:
 - Next action: ready for review
 '
@@ -154,7 +154,7 @@ test_block_next_action_missing() {
     local resp='Output.
 
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Outcome: SUCCESS
 '
     assert_hook_blocks "$HOOK" \
@@ -166,7 +166,7 @@ test_block_next_action_present_but_empty() {
     local resp='Output.
 
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Outcome: SUCCESS
 - Next action:
 '

@@ -1,5 +1,5 @@
 ---
-name: pre-pr
+name: ai-sdlc-pre-pr
 description: >
   [HARNESS INTERNAL — do not invoke directly] Phase 6 pre-PR holistic reviewer,
   activated exclusively by the ai-sdlc-harness dev-workflow orchestrator. Read by
@@ -176,7 +176,7 @@ See `agents/shared/status-schema.md` for the canonical field list across reviewe
 
 ```
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: 6
 - Mode: pre-pr
 - Story: #<STORY-ID>

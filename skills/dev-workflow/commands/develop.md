@@ -126,12 +126,12 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
    to exist on disk before any agent launches; if it fails, the orchestrator picks the fallback
    deterministically.
 
-**If `test-required: true` → Launch @tester (TDD path):**
+**If `test-required: true` → Launch @ai-sdlc-tester (TDD path):**
 
-Launch **@tester** with `run_in_background: true`, `name: "tester-<repo-name>"`, and `mode: "auto-tdd"`:
+Launch **@ai-sdlc-tester** with `run_in_background: true`, `name: "tester-<repo-name>"`, and `mode: "auto-tdd"`:
 
    ```
-   @tester Write failing tests for task T<n> of Story $ARGUMENTS (auto-tdd mode).
+   @ai-sdlc-tester Write failing tests for task T<n> of Story $ARGUMENTS (auto-tdd mode).
    The worktree has already been created for you — DO NOT create another one.
    Commit test code only — do NOT commit the task tracker.
    Do NOT write any production code.
@@ -162,12 +162,12 @@ Launch **@tester** with `run_in_background: true`, `name: "tester-<repo-name>"`,
 
 Mark lane as `phase: "testing"`.
 
-**If `test-required: false` → Launch @developer (direct path):**
+**If `test-required: false` → Launch @ai-sdlc-developer (direct path):**
 
-Launch **@developer** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
+Launch **@ai-sdlc-developer** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @developer Implement task T<n> for Story $ARGUMENTS.
+   @ai-sdlc-developer Implement task T<n> for Story $ARGUMENTS.
    This task is test-required: false — no pre-written tests exist. Implement production code only.
    The worktree has already been created for you — DO NOT create another one.
    Commit production code only — do NOT commit the task tracker.
@@ -195,10 +195,10 @@ Parse the `📋 AGENT STATUS` block from the tester.
 
 1. Extract `Worktree`, `Worktree branch`, `Commit` (Tester's), `Red tests` from Tester AGENT STATUS. Cache the commit hash as `test_commit` in lane state.
 2. Record `Test Written` in Task Metrics: `date -u +"%Y-%m-%d %H:%M UTC"`.
-3. Launch **@developer** in the **SAME worktree** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
+3. Launch **@ai-sdlc-developer** in the **SAME worktree** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @developer Implement task T<n> for Story $ARGUMENTS. Failing tests are already in the worktree.
+   @ai-sdlc-developer Implement task T<n> for Story $ARGUMENTS. Failing tests are already in the worktree.
    Your job: make ALL failing tests pass. Do NOT modify the test files — only write production code.
    Commit production code only — do NOT commit the task tracker.
    Report your worktree path, branch, and commit hash in your AGENT STATUS.
@@ -249,10 +249,10 @@ Parse the `📋 AGENT STATUS` block from the developer.
    Record `Green At` in Task Metrics: `date -u +"%Y-%m-%d %H:%M UTC"`.
    Store developer commit hash as `impl_commit` in the lane state.
 2. Update tracker: T(n) → 🔄 In Review.
-3. Launch **@reviewer** with `run_in_background: true`, `name: "reviewer-<repo-name>"`, and `mode: "auto"`:
+3. Launch **@ai-sdlc-reviewer** with `run_in_background: true`, `name: "reviewer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @reviewer Review task T<n> for Story $ARGUMENTS.
+   @ai-sdlc-reviewer Review task T<n> for Story $ARGUMENTS.
 
    [Include LANGUAGE_CTX — omit restore-cmd and format-cmd]
    [Include WORKTREE_CTX, plus:]
@@ -303,11 +303,11 @@ Parse the `📋 AGENT STATUS` block from the developer.
   `agents/developer/index.md` → *Broken Pre-Existing Tests*. The Developer cannot edit tests;
   the Tester cannot decide whether the impl or the test is wrong. Surface the `Blockers`
   list to the human verbatim and ask them to pick one branch:
-  - **(a) Impl is wrong** — re-invoke @developer in the SAME worktree with the broken tests
+  - **(a) Impl is wrong** — re-invoke @ai-sdlc-developer in the SAME worktree with the broken tests
     as focused fix instructions; tests stay untouched.
-  - **(b) Test needs updating** — invoke @tester in the SAME worktree with `mode: "auto-tdd"`,
+  - **(b) Test needs updating** — invoke @ai-sdlc-tester in the SAME worktree with `mode: "auto-tdd"`,
     pointing at the specific tests to update (note: scope is test-edit, not new test
-    authoring); after tester SUCCESS, re-invoke @developer to verify the worktree builds and
+    authoring); after tester SUCCESS, re-invoke @ai-sdlc-developer to verify the worktree builds and
     all tests are green, then resume the normal review path (Step 3 onwards).
 
   Do NOT auto-route to either agent — wait for the human's selection. Do not advance the
@@ -378,10 +378,10 @@ EOF
    first (so the failing/refined tests are in the worktree) and then the Developer.
 
 3. **If there are `[T<n>]` comments (test rework needed):**
-   Re-invoke **@tester** in the SAME worktree with `run_in_background: true`, `name: "tester-<repo-name>"`, `mode: "auto-tdd"`:
+   Re-invoke **@ai-sdlc-tester** in the SAME worktree with `run_in_background: true`, `name: "tester-<repo-name>"`, `mode: "auto-tdd"`:
 
    ```
-   @tester Address the following test review comments for task T<n> of Story $ARGUMENTS.
+   @ai-sdlc-tester Address the following test review comments for task T<n> of Story $ARGUMENTS.
    You are working in the EXISTING worktree at: <worktree-path>
    Do NOT modify production code — only fix the test code.
 
@@ -400,10 +400,10 @@ EOF
    Otherwise, proceed directly to re-launch Reviewer.
 
 4. **If there are `[R<n>]` comments (production code changes needed):**
-   Re-invoke **@developer** in the SAME worktree with `run_in_background: true`, `name: "developer-<repo-name>"`, `mode: "auto"`:
+   Re-invoke **@ai-sdlc-developer** in the SAME worktree with `run_in_background: true`, `name: "developer-<repo-name>"`, `mode: "auto"`:
 
    ```
-   @developer Address the following review comments for task T<n> of Story $ARGUMENTS.
+   @ai-sdlc-developer Address the following review comments for task T<n> of Story $ARGUMENTS.
    You are working in the EXISTING worktree at: <worktree-path>
    Do NOT modify the test files — only fix production code.
 

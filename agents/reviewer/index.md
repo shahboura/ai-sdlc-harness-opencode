@@ -1,5 +1,5 @@
 ---
-name: reviewer
+name: ai-sdlc-reviewer
 description: >
   [HARNESS INTERNAL — do not invoke directly] Code quality gatekeeper, activated
   exclusively by the ai-sdlc-harness dev-workflow orchestrator during Phase 3
@@ -242,7 +242,7 @@ You MUST end every response with a structured status block. The orchestrator use
 ```
 📋 AGENT STATUS
 <!-- See agents/shared/status-schema.md for the canonical field list across reviewer modes. -->
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: <3 | 5>
 - Story: #<STORY-ID>
 - Task: T<n>

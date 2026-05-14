@@ -14,10 +14,10 @@
 
 ### Step 1: Design Approach Selection
 
-Delegate to **@planner**:
+Delegate to **@ai-sdlc-planner**:
 
 ```
-@planner Before decomposing User Story $ARGUMENTS into tasks, propose 2-3 architectural
+@ai-sdlc-planner Before decomposing User Story $ARGUMENTS into tasks, propose 2-3 architectural
 approaches for implementing this story. For each approach, provide:
 1. A short name and one-line summary
 2. High-level design (which layers, services, and types are involved)
@@ -38,10 +38,10 @@ request a hybrid, or ask for different options.
 > causes the Planner to use it instead of the skill's convention, losing the date prefix
 > and session ID. Let the skill determine the paths.
 
-Once the human selects an approach, continue with **@planner**:
+Once the human selects an approach, continue with **@ai-sdlc-planner**:
 
 ```
-@planner The human selected approach: <SELECTED-APPROACH>.
+@ai-sdlc-planner The human selected approach: <SELECTED-APPROACH>.
 Decompose User Story $ARGUMENTS into an implementation plan using this approach.
 Use the plan-generator skill. Save the plan and task tracker files.
 Present the complete plan for human approval.

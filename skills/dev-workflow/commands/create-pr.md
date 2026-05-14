@@ -24,11 +24,11 @@ feature branches.
 
 ### Step 2 — Pre-PR Holistic Review (per repo, parallel)
 
-For each affected repo, invoke `@reviewer` with `mode: pre-pr` and
+For each affected repo, invoke `@ai-sdlc-reviewer` with `mode: pre-pr` and
 `run_in_background: true` (name: `reviewer-prepr-<repo-name>`):
 
 ```
-@reviewer Pre-PR holistic review for Story $ARGUMENTS.
+@ai-sdlc-reviewer Pre-PR holistic review for Story $ARGUMENTS.
 
 MODE: pre-pr
 
@@ -132,7 +132,7 @@ What would you like to do?
 
 If the human chooses to fix:
 
-1. For each repo with critical issues, invoke `@developer` with the critical issue
+1. For each repo with critical issues, invoke `@ai-sdlc-developer` with the critical issue
    list, working directly on the feature branch (no worktree needed):
    ```
    Fix the following pre-PR review issues on branch <feature-branch> in <repo-path>:

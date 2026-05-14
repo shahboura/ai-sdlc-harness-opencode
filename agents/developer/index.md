@@ -1,5 +1,5 @@
 ---
-name: developer
+name: ai-sdlc-developer
 description: >
   [HARNESS INTERNAL — do not invoke directly] Implementation specialist, activated
   exclusively by the ai-sdlc-harness dev-workflow orchestrator during Phase 3
@@ -201,7 +201,7 @@ decide the next action. No exceptions. See `agents/shared/status-schema.md` for 
 
 ```
 📋 AGENT STATUS
-- Agent: developer
+- Agent: ai-sdlc-developer
 - Phase: 3
 - Story: #<STORY-ID>
 - Task: T<n>

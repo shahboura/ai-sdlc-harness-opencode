@@ -33,7 +33,7 @@ from typing import Any
 
 
 _REQUIRED_PHRASE = "📋 AGENT STATUS"
-_KNOWN_AGENTS = ("planner", "developer", "tester", "reviewer")
+_KNOWN_AGENTS = ("ai-sdlc-planner", "ai-sdlc-developer", "ai-sdlc-tester", "ai-sdlc-reviewer")
 
 # The tail window scales with response length: at least 10 lines so a typical
 # status block (header + ~8 fields + short prose preamble) fits in a short
@@ -126,7 +126,7 @@ def _validate(response: str) -> tuple[bool, str]:
     # `Agent:` with a recognized name.
     agent_val = _field_value(block, "Agent")
     if agent_val is None:
-        return False, 'the block has no `Agent:` field. Add one of: planner | developer | tester | reviewer.'
+        return False, 'the block has no `Agent:` field. Add one of: ai-sdlc-planner | ai-sdlc-developer | ai-sdlc-tester | ai-sdlc-reviewer.'
     if agent_val.strip() not in _KNOWN_AGENTS:
         return (
             False,
@@ -194,7 +194,7 @@ def main() -> int:
     print(
         'Every subagent must end its response with a block of the form:\n'
         "    📋 AGENT STATUS\n"
-        "    - Agent: planner | developer | tester | reviewer\n"
+        "    - Agent: ai-sdlc-planner | ai-sdlc-developer | ai-sdlc-tester | ai-sdlc-reviewer\n"
         "    - Outcome: SUCCESS | PARTIAL | FAILED | BLOCKED   (or Verdict: for reviewers)\n"
         "    - Next action: <one-line description>\n"
         "    (additional fields per agents/shared/status-schema.md)\n",

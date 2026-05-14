@@ -141,17 +141,17 @@ sequenceDiagram
 
     rect rgb(30, 60, 90)
         Note over H,P: Phase 1 — Requirements Ingestion
-        O->>P: @planner Pull story / issue, analyse requirements
+        O->>P: @ai-sdlc-planner Pull story / issue, analyse requirements
         P-->>O: AGENT STATUS (requirements summary, clarifying questions)
         O->>H: Surface clarifying questions
         H->>O: Answers
-        O->>P: @planner Resolve ambiguities with human's answers
+        O->>P: @ai-sdlc-planner Resolve ambiguities with human's answers
         P-->>O: AGENT STATUS (requirements confirmed)
     end
 
     rect rgb(25, 70, 45)
         Note over H,P: Phase 2 — Planning & Approval
-        O->>P: @planner Decompose into plan + Test Outline + tracker
+        O->>P: @ai-sdlc-planner Decompose into plan + Test Outline + tracker
         P-->>O: AGENT STATUS (plan files written)
         O->>H: Present plan + Test Outline for approval
         H->>O: APPROVED / CHANGES
@@ -165,17 +165,17 @@ sequenceDiagram
             Note over O: Update tracker: T(n) → In Progress
 
             alt test-required: true (default)
-                O->>T: @tester Write failing tests for T(n) per Test Outline
+                O->>T: @ai-sdlc-tester Write failing tests for T(n) per Test Outline
                 T-->>O: AGENT STATUS (red tests committed to worktree)
-                O->>D: @developer Make tests green — implement T(n) (code only, no tracker)
+                O->>D: @ai-sdlc-developer Make tests green — implement T(n) (code only, no tracker)
             else test-required: false
-                O->>D: @developer Implement T(n) directly (no pre-written tests)
+                O->>D: @ai-sdlc-developer Implement T(n) directly (no pre-written tests)
             end
 
             D-->>O: AGENT STATUS (worktree, branch, commit, build)
             Note over O: Update tracker: T(n) → In Review
 
-            O->>R: @reviewer Review combined diff at worktree path
+            O->>R: @ai-sdlc-reviewer Review combined diff at worktree path
             R-->>O: AGENT STATUS (verdict, [R<n>] comments)
 
             alt Verdict: APPROVED
@@ -183,7 +183,7 @@ sequenceDiagram
                 Note over O: Update tracker → Done (uncommitted)
             else Verdict: CHANGES_REQUESTED
                 Note over O: Update tracker + relay [R<n>] comments
-                O->>D: @developer Fix issues in SAME worktree
+                O->>D: @ai-sdlc-developer Fix issues in SAME worktree
                 D-->>O: AGENT STATUS (new commit)
                 Note over O: Loop back to review
             end
@@ -201,10 +201,10 @@ sequenceDiagram
     rect rgb(80, 25, 55)
         Note over H,T: Phase 5 — Test Hardening
         Note over O: Record metric: Test hardening started
-        O->>T: @tester Fill integration/E2E coverage gaps (≥ 90% threshold)
+        O->>T: @ai-sdlc-tester Fill integration/E2E coverage gaps (≥ 90% threshold)
         T-->>O: AGENT STATUS (tests, coverage %, commit)
 
-        O->>R: @reviewer Review new tests (read-only)
+        O->>R: @ai-sdlc-reviewer Review new tests (read-only)
         R-->>O: AGENT STATUS (verdict)
 
         alt Verdict: APPROVED
@@ -218,7 +218,7 @@ sequenceDiagram
         Note over H,R: Phase 6 — PR Creation
         Note over O: git rebase --autosquash (squash fixup! commits into task commits)
         Note over O: Re-derive commit hashes, refresh tracker Commit(s) column
-        O->>R: @reviewer Pre-PR holistic review (full branch vs default, all tasks + tests)
+        O->>R: @ai-sdlc-reviewer Pre-PR holistic review (full branch vs default, all tasks + tests)
         R-->>O: Pre-PR Review Report (AC coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene)
         O->>H: Present Pre-PR Review Report
         alt No critical issues
@@ -234,12 +234,12 @@ sequenceDiagram
     rect rgb(70, 40, 30)
         Note over H,R: Phase 7 — PR Review Response (on-demand, repeatable)
         Note over O: Triggered by /dev-workflow review-response <story-id>
-        O->>R: @reviewer (pr-comment-analysis mode) Challenge each PR comment vs plan + AC
+        O->>R: @ai-sdlc-reviewer (pr-comment-analysis mode) Challenge each PR comment vs plan + AC
         R-->>O: Findings report — each comment classified VALID / INVALID / PARTIAL with rationale
         O->>H: Present findings report
         H->>O: Select which comments to address
         alt At least one comment accepted
-            O->>P: @planner Add new tasks for accepted comments
+            O->>P: @ai-sdlc-planner Add new tasks for accepted comments
             P-->>O: AGENT STATUS (tracker amended with new tasks)
             Note over O: Re-enter Phase 3 loop for new tasks only
             Note over O: On completion: new tracker-update commit on top, push, reply on resolved PR threads
@@ -339,7 +339,7 @@ The plugin ships with hooks that enforce harness invariants at the Claude Code l
 | `tracker-metrics-guard` | PreToolUse · Write\|Edit\|MultiEdit | Validates that the tracker's Workflow Metrics and Task Metrics tables stay well-formed. |
 | `squash-merge-verify` | PostToolUse · Bash | Verifies `git merge --squash` only ran after Reviewer approval. `shlex`-aware — handles `cd repo && …`, subshells, env-var prefixes, `git -c key=val`. |
 | `tracker-update-reminder` | PostToolUse · Agent | After subagent runs, reminds the orchestrator to sync tracker status if it looks stale. Tracker selection matches the story ID against tracker filenames (mtime fallback). |
-| `tester-activation-guard` | SubagentStart · tester | Mode-aware: in Phase 3 (`auto-tdd`), allows when at least one task is 🔧 In Progress; in Phase 5 (`auto-harden`), blocks unless every development task (T1, T2, …) is ✅ Done. Falls back to harden semantics if mode is undetectable (safe default). |
+| `tester-activation-guard` | SubagentStart · ai-sdlc-tester | Mode-aware: in Phase 3 (`auto-tdd`), allows when at least one task is 🔧 In Progress; in Phase 5 (`auto-harden`), blocks unless every development task (T1, T2, …) is ✅ Done. Falls back to harden semantics if mode is undetectable (safe default). |
 | `agent-status-check` | SubagentStop | Verifies every agent response ends with a `📋 AGENT STATUS` block — checks for tail position plus a non-empty `Outcome:` or `Verdict:` field. Mid-prose mentions no longer satisfy the gate. |
 | `stop-failure-marker` | StopFailure | Writes a recovery marker on unexpected agent stop (API failure, timeout). Cwd-independent via shared workspace walk-up. |
 | `stop-failure-recovery` | UserPromptSubmit | Detects the recovery marker at the start of the next prompt and injects resume instructions for the orchestrator. |
@@ -420,7 +420,7 @@ Agent files live at `agents/<name>/index.md` with YAML frontmatter (the `reviewe
 
 | Field | Description |
 |-------|-------------|
-| `name` | Agent identifier (matches directory name) |
+| `name` | Agent identifier — for harness agents this is `ai-sdlc-<role>` (e.g. `ai-sdlc-planner`), which differs from the directory name |
 | `description` | Role description shown in the Agent tool |
 | `tools` / `disallowedTools` | Allowed and denied tool lists |
 | `model` | LLM model — `inherit` (default, uses parent session model), `opus`, `sonnet`, or `haiku` |

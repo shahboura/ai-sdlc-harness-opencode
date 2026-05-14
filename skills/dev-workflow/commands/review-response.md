@@ -81,12 +81,12 @@ Wait for the human's response. If [2], end the phase without updating metrics.
 
 ### Step 3 — Reviewer: Challenge Comments Against Plan and AC
 
-For each repo that has unresolved comments, invoke `@reviewer` with
+For each repo that has unresolved comments, invoke `@ai-sdlc-reviewer` with
 `mode: pr-comment-analysis` and `run_in_background: true`
 (name: `reviewer-prcomment-<repo-name>`):
 
 ```
-@reviewer Analyse PR review comments for Story $ARGUMENTS.
+@ai-sdlc-reviewer Analyse PR review comments for Story $ARGUMENTS.
 
 MODE: pr-comment-analysis
 
@@ -176,7 +176,7 @@ no tasks are created, no commits made.
 
 Collect the accepted `[PC-<n>]` comments along with the Reviewer's proposed task outlines.
 
-Invoke `@planner` (foreground) with the existing tracker and plan. The Planner's
+Invoke `@ai-sdlc-planner` (foreground) with the existing tracker and plan. The Planner's
 behaviour in this mode is documented in `skills/plan-generator/SKILL.md` under
 **Phase 7 Amendment Mode** — the prompt below sets the orchestrator-side context
 the skill needs (paths, story ID, accepted comments, round number); the skill
@@ -184,7 +184,7 @@ handles the row template, dependency-graph regeneration, and the no-reorder /
 no-remove invariant on existing rows.
 
 ```
-@planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
+@ai-sdlc-planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
 
 MODE: pr-response-tasks
 

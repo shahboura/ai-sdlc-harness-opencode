@@ -1,5 +1,5 @@
 ---
-name: pr-comment-analysis
+name: ai-sdlc-pr-comment-analysis
 description: >
   [HARNESS INTERNAL — do not invoke directly] Phase 7 PR comment analyser,
   activated exclusively by the ai-sdlc-harness dev-workflow orchestrator. Read by
@@ -90,7 +90,7 @@ See `agents/shared/status-schema.md` for the canonical field list across reviewe
 
 ```
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: 7
 - Mode: pr-comment-analysis
 - Story: #<STORY-ID>

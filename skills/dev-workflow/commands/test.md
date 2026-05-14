@@ -55,11 +55,11 @@ For each affected repo (one per repo in the Repo Status section):
 
 #### Step 1: Harden Tests
 
-Launch **@tester** with `mode: "auto-harden"` (can use `run_in_background: true` for parallel
+Launch **@ai-sdlc-tester** with `mode: "auto-harden"` (can use `run_in_background: true` for parallel
 per-repo hardening). Pass the repo path:
 
 ```
-@tester Harden tests for Story $ARGUMENTS in repo <RepoName> (auto-harden mode).
+@ai-sdlc-tester Harden tests for Story $ARGUMENTS in repo <RepoName> (auto-harden mode).
 Unit tests from Phase 3 already exist in the codebase at <REPO_PATH>.
 Your job: gap-fill integration/E2E tests and enforce >=90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code.
 
@@ -101,10 +101,10 @@ After tester returns SUCCESS: **update tracker** — set `T-TEST-<RepoName>` →
 
 #### Step 2: Review Tests
 
-After tester completes, launch **@reviewer** with `mode: "auto"`:
+After tester completes, launch **@ai-sdlc-reviewer** with `mode: "auto"`:
 
 ```
-@reviewer Review the test hardening for Story $ARGUMENTS in repo <RepoName>.
+@ai-sdlc-reviewer Review the test hardening for Story $ARGUMENTS in repo <RepoName>.
 Unit tests from Phase 3 are already present. Review only the NEWLY ADDED integration/E2E tests.
 Run the test command at <REPO_PATH> to verify all tests (Phase 3 + new) pass.
 Run the coverage command to verify >=90% line coverage on new/modified code only.
