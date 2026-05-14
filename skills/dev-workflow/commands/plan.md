@@ -14,10 +14,10 @@
 
 ### Step 1: Design Approach Selection
 
-Delegate to **@planner**:
+Delegate to **@ai-sdlc-planner**:
 
 ```
-@planner Before decomposing User Story $ARGUMENTS into tasks, propose 2-3 architectural
+@ai-sdlc-planner Before decomposing User Story $ARGUMENTS into tasks, propose 2-3 architectural
 approaches for implementing this story. For each approach, provide:
 1. A short name and one-line summary
 2. High-level design (which layers, services, and types are involved)
@@ -38,10 +38,10 @@ request a hybrid, or ask for different options.
 > causes the Planner to use it instead of the skill's convention, losing the date prefix
 > and session ID. Let the skill determine the paths.
 
-Once the human selects an approach, continue with **@planner**:
+Once the human selects an approach, continue with **@ai-sdlc-planner**:
 
 ```
-@planner The human selected approach: <SELECTED-APPROACH>.
+@ai-sdlc-planner The human selected approach: <SELECTED-APPROACH>.
 Decompose User Story $ARGUMENTS into an implementation plan using this approach.
 Use the plan-generator skill. Save the plan and task tracker files.
 Present the complete plan for human approval.
@@ -61,17 +61,38 @@ date -u +"%Y-%m-%d %H:%M UTC"
 
 ### Commit the Plan
 
-Once approved, commit **only the plan file** (the tracker stays uncommitted):
+Per [orchestrator rule #8] (`<WORKSPACE_ROOT>/ai/` is the canonical home; the repo copy
+does not exist until Phase 6), this step's behavior depends on whether the workspace is
+itself a git repository. First, check:
+
+```bash
+git -C ai/plans/ rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
+
+Commit **only the plan file** (the tracker stays uncommitted):
 
 ```bash
 git add ai/plans/
 git commit -m "$(cat <<'EOF'
-#<STORY-ID>: add approved implementation plan
+#<STORY-ID> #TPLAN: add approved implementation plan
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
 )"
 ```
+
+**If the workspace is NOT a git repo** (exits non-zero — workspace-separated case):
+
+**Skip the commit.** The plan stays in `<WORKSPACE_ROOT>/ai/plans/` per rule #8 and travels
+into each affected repo alongside the tracker in Phase 6 (`commands/create-pr.md` Step 6).
+
+Do NOT `cp` or otherwise copy the plan into a code repo at this phase — rule #8 forbids it,
+and the `bash-write-guard` hook will block any Bash write to `/ai/` paths by design. If a
+command file step appears to conflict with rule #8, surface the conflict to the human per
+the Conflict-Surfacing Rule in `context/orchestrator-rules.md` rather than inventing a
+workaround.
 
 **The task tracker is NOT committed here.** It remains an uncommitted working file that the
 orchestrator updates in-place throughout Phases 3-5. It is committed once before PR creation

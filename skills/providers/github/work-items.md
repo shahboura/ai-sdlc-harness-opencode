@@ -143,6 +143,21 @@ Document the team's convention in provider-config.md during init-workspace.
 7. **`gh` CLI as powerful fallback**: The `gh` CLI is often more convenient than MCP for
    simple operations and is likely already installed on developer machines.
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `work_item.fetch` | ✅ | `mcp__github__get_issue` or `gh issue view --json` |
+| `work_item.list_comments` | ✅ | `mcp__github__list_issue_comments` or `gh issue view --comments` |
+| `work_item.add_comment` | ✅ | `mcp__github__create_issue_comment` or `gh issue comment` |
+| `work_item.list_changelog` | 🟡 | Timeline events API — not exposed via current MCP toolset; fetch via `gh api repos/.../issues/<n>/timeline` |
+| `work_item.list_children` | 🟡 | No native parent/child — parse task lists in body or use `tracked-by` field |
+| `work_item.list_attachments` | ❌ | GitHub issues do not support file attachments via the issue API |
+| `work_item.transition_state` | 🟡 | Two states only (open/closed); use `gh issue close` / `gh issue reopen` |
+| `work_item.search` | ✅ | `mcp__github__search_issues` or `gh issue list --search` |
+
 ## Planner Tool List (for agent frontmatter)
 
 ```

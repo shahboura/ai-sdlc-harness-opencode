@@ -41,7 +41,7 @@ Defaults from `provider-config.md`. See the `/dev-workflow` skill for full workf
 6. Reviewer reviews the combined two-commit diff (tests + impl), returns verdict
 7. Orchestrator handles verdict:
    - Approved → `git merge --squash` (both commits), tracker → Done, clean up worktree
-   - Changes Requested → relay `[R<n>]` comments; if comments touch impl only, re-invoke Developer in SAME worktree; if comments touch tests, re-invoke Tester in SAME worktree; repeat from step 5
+   - Changes Requested → relay structured comments per the three-prefix model (`[R<n>]` → Developer, `[T<n>]` → Tester, `[S<n>]` → routed by file path) in the SAME worktree; when both impl and test comments exist, invoke Tester first then Developer; repeat from step 5
 
 **For tasks marked `test-required: false`:**
 
@@ -106,6 +106,8 @@ The workflow supports multiple providers via adapter skills in `skills/providers
 | local-markdown | ✅ (local .md files) | Via git provider | `provider-config.md` → `providers/local-markdown/` |
 
 Provider selection happens during `/init-workspace` and is stored in `.claude/context/provider-config.md`.
+
+**Phase 7 (PR review-response) support** is declared per git provider in `skills/providers/<git-provider>/pr-comments.md` and covers all five git providers: GitHub (`gh api graphql` for review threads, REST replies), gh-cli (same CLI primitives), GitLab (REST `/discussions` via `curl`), glab-cli (`glab api` discussions), and ADO (REST `/threads` via `curl`). MCP wrappers exist for some providers and are marked 🟡 in each adapter — verify the tool surface in your harness install before relying on them. See `skills/providers/shared/capabilities.md` for the canonical capability list and sweep status.
 
 ## Worktree Fallback (Windows)
 

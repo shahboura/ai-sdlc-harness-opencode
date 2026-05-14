@@ -122,6 +122,20 @@ Closes #123
 
 No separate API call is needed — GitHub handles linking and auto-closing natively.
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `pr.create` | ✅ | `gh pr create` |
+| `pr.find_for_branch` | ✅ | `gh pr list --head <branch> --state open --json number,url --limit 1` |
+| `pr.link_work_item` | 🟡 | Emulated — `Closes #N` keyword in PR body auto-links and auto-closes the issue |
+| `pr.set_draft` | ✅ | `--draft` flag |
+
+PR review-comment capabilities (`pr.list_review_comments`, `pr.reply_to_review_comment`)
+are declared separately in [`pr-comments.md`](./pr-comments.md).
+
 ## Terminology
 
 - **Type**: Pull Request (PR)

@@ -1,5 +1,5 @@
 ---
-name: pr-comment-analysis
+name: ai-sdlc-pr-comment-analysis
 description: >
   [HARNESS INTERNAL — do not invoke directly] Phase 7 PR comment analyser,
   activated exclusively by the ai-sdlc-harness dev-workflow orchestrator. Read by
@@ -42,6 +42,21 @@ unless needed to assess a specific comment. Strictly analytical.
 4. Produce the **PR Comment Analysis Report** (see format below).
 5. Do NOT write or edit any file. Return the full report to the orchestrator.
 
+### Verdict semantics
+
+Set `Verdict:` in the AGENT STATUS block based on what the analysis covered:
+
+- `ANALYSIS_COMPLETE` — every `[PC-<n>]` comment provided was classified as VALID, INVALID, or PARTIAL.
+- `ANALYSIS_PARTIAL` — at least one comment could not be classified (e.g. references a file
+  not present on the feature branch, or the comment body is unparseable). Record the
+  unclassified count in `Unclassified:`. The orchestrator surfaces these to the human at
+  GATE #4 so they can decide whether to skip, override, or re-fetch.
+- `PLAN_NOT_FOUND` — the plan file at `plan_path` could not be read. No comment was
+  classified. `Outcome: FAILED`. This is a setup error — the orchestrator escalates.
+
+`Outcome: SUCCESS` requires `Verdict ∈ {ANALYSIS_COMPLETE, ANALYSIS_PARTIAL}`.
+`Outcome: FAILED` is reserved for `Verdict: PLAN_NOT_FOUND` or for analyser crashes.
+
 ## PR Comment Analysis Report Format
 
 ```
@@ -71,20 +86,24 @@ unless needed to assess a specific comment. Strictly analytical.
 
 ## AGENT STATUS Block (Phase 7)
 
+See `agents/shared/status-schema.md` for the canonical field list across reviewer modes.
+
 ```
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: 7
 - Mode: pr-comment-analysis
 - Story: #<STORY-ID>
 - Repo: <repo-name>
 - Repo path: <local repo path>
 - Outcome: <SUCCESS | FAILED>
+- Verdict: <ANALYSIS_COMPLETE | ANALYSIS_PARTIAL | PLAN_NOT_FOUND>
 - Comments analysed: <N>
 - Valid: <N>
 - Invalid: <N>
 - Partial: <N>
-- Next action: <"orchestrator: present report to human" | "escalate to human — plan not found">
+- Unclassified: <N>   # comments the analyser could not place against the plan; non-zero ⇒ Verdict: ANALYSIS_PARTIAL
+- Next action: <"orchestrator: present report to human" | "escalate to human — plan not found" | "escalate to human — partial analysis, see Unclassified count">
 ```
 
 The full PR Comment Analysis Report is returned in the response body — NOT in the status block.

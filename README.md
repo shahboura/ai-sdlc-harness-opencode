@@ -7,7 +7,7 @@
 | **Story Workflow** | Refine, analyze, and technically groom stories before development | `/story-workflow <command> <work-item-id>` |
 | **Dev Workflow** | Implement a story end-to-end — plan, code, review, test, PR/MR | `/dev-workflow <Work-Item-ID>` |
 
-> The authoritative workflow specification — phases, ownership rules, status transitions, non-negotiable rules — lives in [`CLAUDE.md`](CLAUDE.md). This README is an introduction; `CLAUDE.md` is the spec.
+> The authoritative workflow specification — phases, ownership rules, status transitions, non-negotiable rules — lives in [`CLAUDE.md`](CLAUDE.md). This README is an introduction; `CLAUDE.md` is the spec. First time? Start with [`getting-started.md`](getting-started.md) for a 10-minute path from install to first story.
 
 ## Installation
 
@@ -49,7 +49,7 @@ That's it. `/dev-workflow` and `/story-workflow` are now available.
 |-----------|-----|
 | **Claude Code** | The CLI that runs this harness. Install from [claude.ai/code](https://claude.ai/code) |
 | **Git** | Branch management, worktree isolation, commits |
-| **Python 3** | All hooks use Python for JSON parsing (no `jq` dependency) |
+| **Python 3** | **Required** — every guard hook (`validate-commit-msg`, `bash-write-guard`, tracker guards, sensitive-file guard, status-check) parses the hook JSON payload in Python, and the commit-message validator uses Python's `shlex` to tokenize git commands. If `python3`/`python` is not on `PATH`, the shared hook library exits at source time and the underlying tool call is blocked. Pre-installed on macOS and every modern Linux distro; Windows users should install from [python.org](https://www.python.org/downloads/) before running `/init-workspace`. |
 | **Provider MCP server** *(optional)* | One of: ADO, Jira, GitLab, GitHub, or Zoho MCP. Required if you use a provider with MCP integration. The `gh-cli` and `glab-cli` git providers don't need an MCP server. The `local-markdown` provider needs no MCP server at all. Run `/init-workspace` to select. |
 
 Target repos must be **cloned locally** — this harness does not clone them. Each repo should be on its default branch and reasonably current before running `/init-workspace`. No language prerequisites required; toolchains are discovered.
@@ -141,22 +141,22 @@ sequenceDiagram
 
     rect rgb(30, 60, 90)
         Note over H,P: Phase 1 — Requirements Ingestion
-        O->>P: @planner Pull story / issue, analyse requirements
+        O->>P: @ai-sdlc-planner Pull story / issue, analyse requirements
         P-->>O: AGENT STATUS (requirements summary, clarifying questions)
         O->>H: Surface clarifying questions
         H->>O: Answers
-        O->>P: @planner Resolve ambiguities with human's answers
+        O->>P: @ai-sdlc-planner Resolve ambiguities with human's answers
         P-->>O: AGENT STATUS (requirements confirmed)
     end
 
     rect rgb(25, 70, 45)
         Note over H,P: Phase 2 — Planning & Approval
-        O->>P: @planner Decompose into plan + Test Outline + tracker
+        O->>P: @ai-sdlc-planner Decompose into plan + Test Outline + tracker
         P-->>O: AGENT STATUS (plan files written)
         O->>H: Present plan + Test Outline for approval
         H->>O: APPROVED / CHANGES
         Note over O: Record metric: Plan approved
-        Note over O: git add ai/plans/ && git commit (plan only, tracker stays uncommitted)
+        Note over O: If workspace is a git repo: commit plan (tracker stays uncommitted). Else: plan stays in workspace until Phase 6.
     end
 
     rect rgb(85, 50, 20)
@@ -165,17 +165,17 @@ sequenceDiagram
             Note over O: Update tracker: T(n) → In Progress
 
             alt test-required: true (default)
-                O->>T: @tester Write failing tests for T(n) per Test Outline
+                O->>T: @ai-sdlc-tester Write failing tests for T(n) per Test Outline
                 T-->>O: AGENT STATUS (red tests committed to worktree)
-                O->>D: @developer Make tests green — implement T(n) (code only, no tracker)
+                O->>D: @ai-sdlc-developer Make tests green — implement T(n) (code only, no tracker)
             else test-required: false
-                O->>D: @developer Implement T(n) directly (no pre-written tests)
+                O->>D: @ai-sdlc-developer Implement T(n) directly (no pre-written tests)
             end
 
             D-->>O: AGENT STATUS (worktree, branch, commit, build)
             Note over O: Update tracker: T(n) → In Review
 
-            O->>R: @reviewer Review combined diff at worktree path
+            O->>R: @ai-sdlc-reviewer Review combined diff at worktree path
             R-->>O: AGENT STATUS (verdict, [R<n>] comments)
 
             alt Verdict: APPROVED
@@ -183,7 +183,7 @@ sequenceDiagram
                 Note over O: Update tracker → Done (uncommitted)
             else Verdict: CHANGES_REQUESTED
                 Note over O: Update tracker + relay [R<n>] comments
-                O->>D: @developer Fix issues in SAME worktree
+                O->>D: @ai-sdlc-developer Fix issues in SAME worktree
                 D-->>O: AGENT STATUS (new commit)
                 Note over O: Loop back to review
             end
@@ -201,10 +201,10 @@ sequenceDiagram
     rect rgb(80, 25, 55)
         Note over H,T: Phase 5 — Test Hardening
         Note over O: Record metric: Test hardening started
-        O->>T: @tester Fill integration/E2E coverage gaps (≥ 90% threshold)
+        O->>T: @ai-sdlc-tester Fill integration/E2E coverage gaps (≥ 90% threshold)
         T-->>O: AGENT STATUS (tests, coverage %, commit)
 
-        O->>R: @reviewer Review new tests (read-only)
+        O->>R: @ai-sdlc-reviewer Review new tests (read-only)
         R-->>O: AGENT STATUS (verdict)
 
         alt Verdict: APPROVED
@@ -218,7 +218,7 @@ sequenceDiagram
         Note over H,R: Phase 6 — PR Creation
         Note over O: git rebase --autosquash (squash fixup! commits into task commits)
         Note over O: Re-derive commit hashes, refresh tracker Commit(s) column
-        O->>R: @reviewer Pre-PR holistic review (full branch vs default, all tasks + tests)
+        O->>R: @ai-sdlc-reviewer Pre-PR holistic review (full branch vs default, all tasks + tests)
         R-->>O: Pre-PR Review Report (AC coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene)
         O->>H: Present Pre-PR Review Report
         alt No critical issues
@@ -226,7 +226,7 @@ sequenceDiagram
         else Critical issues found
             H->>O: Fix / Proceed anyway
         end
-        Note over O: git add ai/tasks/ && git commit (tracker — first and only commit)
+        Note over O: Commit tracker (and plan, if not already committed in Phase 2)
         O->>O: /pr-creator
         Note over O: Record metric: PR created
     end
@@ -234,15 +234,15 @@ sequenceDiagram
     rect rgb(70, 40, 30)
         Note over H,R: Phase 7 — PR Review Response (on-demand, repeatable)
         Note over O: Triggered by /dev-workflow review-response <story-id>
-        O->>R: @reviewer (pr-comment-analysis mode) Challenge each PR comment vs plan + AC
+        O->>R: @ai-sdlc-reviewer (pr-comment-analysis mode) Challenge each PR comment vs plan + AC
         R-->>O: Findings report — each comment classified VALID / INVALID / PARTIAL with rationale
         O->>H: Present findings report
         H->>O: Select which comments to address
         alt At least one comment accepted
-            O->>P: @planner Add new tasks for accepted comments
+            O->>P: @ai-sdlc-planner Add new tasks for accepted comments
             P-->>O: AGENT STATUS (tracker amended with new tasks)
             Note over O: Re-enter Phase 3 loop for new tasks only
-            Note over O: On completion: amend tracker commit, push, comment resolved on PR
+            Note over O: On completion: new tracker-update commit on top, push, reply on resolved PR threads
         else All comments rejected
             Note over O: Reply on PR with rationale for each INVALID
         end
@@ -267,6 +267,8 @@ A Markdown file at `ai/tasks/` that tracks every task's status through the workf
 
 Dev tasks (`T1`, `T2`, ...) track Phase 3 implementation. One `T-TEST-<RepoName>` row per affected repo tracks Phase 5 test hardening through the same lifecycle — the orchestrator records the tester commit hash and reviewer verdict before marking it Done. Task Metrics additionally capture `Test Written` (when the tester commits failing tests for a `test-required: true` task) and `Green At` (when the developer commits the passing implementation).
 
+Cross-task dependencies are declared in the Notes column with a canonical `depends: T<n>[, T<n>...]` token; the orchestrator gates each lane on every listed Task ID being ✅ Done. The plan-generator also renders a Mermaid `flowchart LR` of the full task graph in a `## Dependency Graph` section of the tracker.
+
 ### Worktree Isolation
 
 The Developer works in a temporary git worktree — a separate checkout of the repo. This means:
@@ -279,6 +281,7 @@ The Developer works in a temporary git worktree — a separate checkout of the r
 
 Quality is enforced through independent verification at each stage:
 
+- The **Developer** runs an **API-compatibility precondition** before writing any production code for tasks that carry an `[API: <lib> v<version>]` annotation (stamped by the Planner in Phase 2). It consults the library's docs for that exact version to verify method/type signatures — not the latest stable, not from memory. Only then does production code get written.
 - The **Developer** must run the repo's build command (from `language-config.md`) and pass its strictness policy before committing. On failure: 2 retry attempts, then escalate to human.
 - The **Reviewer** must independently run the build command (and test command for test reviews) — it never trusts another agent's build claim.
 - The **Tester** must run the test command and achieve ≥ 90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code. On failure: 2 retry attempts, then escalate.
@@ -289,11 +292,11 @@ The Reviewer performs a three-phase review:
 
 0. **Ownership & convention pre-check** — Runs first, before any code is read. Verifies no forbidden path writes (developer/tester must not touch `./ai/`), commit message format, no emoji shortcodes in Markdown, no sensitive files (`.env`, `.pem`, `.key`). Any failure immediately returns `🔄 Changes Requested` and skips the later phases.
 1. **Spec compliance** — Does the code match the plan? Failures produce `[S1]`, `[S2]`, ... comments. If spec fails, code quality is skipped entirely.
-2. **Code quality** — Are conventions followed? Are there bugs? Produces `[R1]`, `[R2]`, ... comments with severities: `CRITICAL` (must fix), `WARNING` (should fix), `SUGGESTION` (consider).
+2. **Code quality** — Are conventions followed? Are there bugs? Produces `[R1]`, `[R2]`, ... comments on production code and `[T1]`, `[T2]`, ... comments on test code, with severities: `CRITICAL` (must fix), `WARNING` (should fix), `SUGGESTION` (consider). The orchestrator routes `R` → Developer, `T` → Tester, and `S` → by file path; when both impl and test comments exist on the same task, the Tester runs first.
 
 **Phase 2 planning** includes a dependency version pre-flight: the plan-generator reads `key_dependencies` from `language-config.md` and stamps each task's Notes with `[API: <lib> v<version>]` for any task that prescribes a named library method or type. Developers see the exact version at the point of implementation, preventing API-compatibility failures from wrong-version assumptions.
 
-**Phase 6 pre-PR holistic review** produces a structured report covering: full change surface (every file changed with category), AC-by-AC verification with implementation and test evidence, task coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene, risk & assumptions review vs plan, open items (TODO/FIXME/HACK + unanswered story questions), and a ready-to-use PR description draft.
+**Phase 6 pre-PR holistic review** produces a structured report covering: full change surface (every file changed with category), AC-by-AC verification with implementation and test evidence, task coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene, risk & assumptions review vs plan, open items (TODO/FIXME/HACK + unanswered story questions), and a ready-to-use PR description draft. For multi-repo stories, each repo's reviewer also emits a **Contract Verification table** with observed signatures; the orchestrator does a lexical cross-repo compare and surfaces any drift to the human before PR creation.
 
 ## Branch & Commit Conventions
 
@@ -312,9 +315,42 @@ The Reviewer performs a three-phase review:
 #123456 test-harden: add integration tests for token refresh flow
 ```
 
+**Orchestrator meta commits:** the orchestrator commits the plan, the tracker, and (when Phase 7 runs) a tracker-update commit using designated meta Task IDs that match the canonical form:
+
+```
+#123456 #TPLAN:    add approved implementation plan                  (Phase 2)
+#123456 #TTRACKER: add task tracker with final workflow state         (Phase 6)
+#123456 #TPR-RESP: record PR review response completion               (Phase 7)
+```
+
 Every commit body includes `Co-Authored-By: Claude Code <noreply@anthropic.com>`.
 
-These conventions are enforced by the `validate-commit-msg` plugin-level hook (fires on every `git commit` Bash call by any agent). Orchestrator-authored commits (the Phase 2 plan commit and Phase 6 tracker commit) are not covered by the hook — follow the format manually for those.
+These conventions are enforced by the `validate-commit-msg` plugin-level hook (fires on every `git commit` Bash call by any agent, including the orchestrator). The hook accepts: the canonical `#<STORY-ID> #<TASK-ID>: …` form (the meta Task IDs above — `#TPLAN`, `#TTRACKER`, `#TPR-RESP` — are valid instances of this form), the TDD `test:`/`impl:` variants, the Phase 5 `test-harden` exception, and git's autosquash markers (`fixup!`/`squash!`/`amend!`/`reword!`). Anything else is fail-closed.
+
+## Guardrail Hooks
+
+The plugin ships with hooks that enforce harness invariants at the Claude Code level. They fire on every relevant tool call in every session — no setup beyond installing the plugin. All hooks scope themselves to initialised harness workspaces (`.claude/context/provider-config.md` must exist), so they don't interfere with unrelated Claude Code sessions.
+
+| Hook | Event · Matcher | What it enforces |
+|------|-----------------|------------------|
+| `validate-commit-msg` | PreToolUse · Bash | `git commit` subjects match `#<STORY-ID> #<TASK-ID>: …` or one of the documented variants (`test:`/`impl:` TDD suffixes, `test-harden:` Phase 5 form, `fixup!`/`squash!`/`amend!`/`reword!` autosquash markers). Fail-closed on any unparseable form — chained commands, `git -C`, multiple `-m`, `--message=`, `-F`, `--amend`, heredoc bodies. |
+| `bash-write-guard` | PreToolUse · Bash | Blocks shell-driven writes (redirects, `tee`, `cp`, `mv`, `install`, `dd of=…`, `ln`) into `ai/` paths or sensitive files. `ai/` is owned by Read/Write tool calls, never shell mutations. Role-aware when subagent identity is available: reviewer = no writes; planner = writes only under `ai/`. |
+| `sensitive-file-guard` | PreToolUse · Write\|Edit\|MultiEdit\|NotebookEdit | Blocks direct file-tool writes to `.env*`, `*.pem`, `*.key`, `id_rsa*`, `*.tfstate`, and similar credential patterns. Shares the deny-list (`scripts/_sensitive_patterns.py`) with `bash-write-guard`. |
+| `tracker-transition-guard` | PreToolUse · Write\|Edit\|MultiEdit | Applies the edit in-memory and validates every task-status transition against the legal state machine on a per-row basis (each Task ID's before/after status is diffed and checked). Whole-file `Write` is covered; metadata-only edits (Notes, Commit, Verdict, timestamps) pass through. |
+| `tracker-metrics-guard` | PreToolUse · Write\|Edit\|MultiEdit | Validates that the tracker's Workflow Metrics and Task Metrics tables stay well-formed. |
+| `squash-merge-verify` | PostToolUse · Bash | Verifies `git merge --squash` only ran after Reviewer approval. `shlex`-aware — handles `cd repo && …`, subshells, env-var prefixes, `git -c key=val`. |
+| `tracker-update-reminder` | PostToolUse · Agent | After subagent runs, reminds the orchestrator to sync tracker status if it looks stale. Tracker selection matches the story ID against tracker filenames (mtime fallback). |
+| `tester-activation-guard` | SubagentStart · ai-sdlc-tester | Mode-aware: in Phase 3 (`auto-tdd`), allows when at least one task is 🔧 In Progress; in Phase 5 (`auto-harden`), blocks unless every development task (T1, T2, …) is ✅ Done. Falls back to harden semantics if mode is undetectable (safe default). |
+| `agent-status-check` | SubagentStop | Verifies every agent response ends with a `📋 AGENT STATUS` block — checks for tail position plus a non-empty `Outcome:` or `Verdict:` field. Mid-prose mentions no longer satisfy the gate. |
+| `stop-failure-marker` | StopFailure | Writes a recovery marker on unexpected agent stop (API failure, timeout). Cwd-independent via shared workspace walk-up. |
+| `stop-failure-recovery` | UserPromptSubmit | Detects the recovery marker at the start of the next prompt and injects resume instructions for the orchestrator. |
+| *(inline prompt)* | PostCompact | Reconstructs workflow state from the latest tracker and plan after context compaction. |
+
+**Fail-closed vs fail-open** — every hook declares its policy in [`scripts/README.md`](scripts/README.md). Recognised violations always block; unparseable inputs default to fail-open so legitimate-but-weird commands aren't silently swallowed. The strictest is `bash-write-guard`: every recognised shell-write pattern is fail-closed.
+
+**Shared library** — every guard script sources `scripts/_hook-lib.sh` for python probing, payload reading, dotted-path field extraction (including list-shaped `tool_response` blocks), exit helpers, and workspace-root walk-up. Commit-command parsing lives in `scripts/_git_argparse.py` — a `shlex`-based parser that replaces the brittle single-regex extractor.
+
+**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). Skill files have doc-grep regression tests under `tests/skills/`. Provider adapter capability assertions live under `tests/adapters/`. A behavioural worktree fixture lives under `tests/integration/`. Run everything via `tests/run.sh` (the top-level aggregator), or individual suites via their own `run.sh`.
 
 ## Utility Commands
 
@@ -329,6 +365,7 @@ These conventions are enforced by the `validate-commit-msg` plugin-level hook (f
 ```
 ai-sdlc-harness/
 ├── CLAUDE.md                  # Authoritative workflow specification
+├── getting-started.md         # 10-minute onboarding guide
 ├── .claude-plugin/
 │   ├── plugin.json            # Plugin manifest (name, version, skills root)
 │   └── marketplace.json       # Marketplace entry
@@ -351,8 +388,14 @@ ai-sdlc-harness/
 │   └── providers/             # Provider adapter skills (ado, jira, gitlab, github, zoho, gh-cli, glab-cli, local-markdown, shared/)
 ├── hooks/
 │   └── hooks.json             # Plugin hook registrations
-└── scripts/
-    └── *.sh                   # Guardrail scripts
+├── scripts/
+│   ├── *.sh                   # Guardrail shell entry points
+│   └── *.py                   # Guard logic + shared library (_hook-lib.sh, _git_argparse.py, _sensitive_patterns.py)
+└── tests/
+    ├── hooks/                 # Pure-bash unit tests for every hook
+    ├── skills/                # Doc-grep regression tests for skill files
+    ├── adapters/              # Provider adapter capability assertions
+    └── integration/           # Behavioural worktree fixture
 ```
 
 Target-workspace artifacts — `ai/plans/`, `ai/tasks/`, and `.claude/context/` — are generated inside your working directory by `/init-workspace` and the workflow phases. They do **not** live inside this plugin repo.
@@ -385,7 +428,7 @@ Agent files live at `agents/<name>/index.md` with YAML frontmatter (the `reviewe
 
 | Field | Description |
 |-------|-------------|
-| `name` | Agent identifier (matches directory name) |
+| `name` | Agent identifier — for harness agents this is `ai-sdlc-<role>` (e.g. `ai-sdlc-planner`), which differs from the directory name |
 | `description` | Role description shown in the Agent tool |
 | `tools` / `disallowedTools` | Allowed and denied tool lists |
 | `model` | LLM model — `inherit` (default, uses parent session model), `opus`, `sonnet`, or `haiku` |

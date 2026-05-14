@@ -7,6 +7,10 @@
 ai/plans/
 ai/tasks/
 
+# Python bytecode (test runs create this when importing hook helpers)
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 Thumbs.db

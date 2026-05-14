@@ -54,6 +54,19 @@ the work item in ADO's UI.
 - **Single repo**: `#<STORY-ID>: <summary>`
 - **Multi-repo**: `#<STORY-ID>: <summary> [<RepoName>]`
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `pr.create` | ✅ | `mcp__azure-devops__repo_create_pull_request` |
+| `pr.find_for_branch` | ✅ | REST `GET /pullrequests?searchCriteria.sourceRefName=refs/heads/<branch>&status=active` via `curl` |
+| `pr.link_work_item` | ✅ | Native — `mcp__azure-devops__wit_link_work_item_to_pull_request` |
+| `pr.set_draft` | ✅ | `isDraft: true` parameter on `repo_create_pull_request` |
+
+PR review-comment capabilities (`pr.list_review_comments`, `pr.reply_to_review_comment`) are declared separately in [`pr-comments.md`](./pr-comments.md) — REST via `curl` is the canonical path; MCP thread-list/reply tools may exist (🟡) but are version-dependent.
+
 ## Terminology
 
 - **Type**: Pull Request (PR)
