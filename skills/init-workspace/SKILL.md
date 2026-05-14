@@ -226,10 +226,10 @@ Write `.claude/context/conventions.md` with the combined result. This is the onl
 
 ## 1. Team Rules (universal)
 - team name: <value — required; re-prompt if blank>
-- git commit format: #<STORY-ID> #<TASK-ID>: <imperative>
-- branch naming: <team-name>/feature/<id>-<slug>   # use the actual team name
+- git commit format: `#<STORY-ID> #<TASK-ID>: <imperative>`
+- branch naming: `<team-name>/feature/<id>-<slug>`
 - coverage threshold: <value, default 90%>
-- PR title: <value or "default">
+- PR title: `#<issue-id>: <title>` (or "default")
 - <other team-wide rules>
 
 ## 2. Language Baselines

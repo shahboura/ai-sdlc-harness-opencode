@@ -43,12 +43,16 @@ For each repo, read the evidence map and a targeted sample of file contents (e.g
   - `build_warning_pattern`
   - `build_success_pattern`
   - `test_summary_pattern`
-- **key_dependencies** — extract library names and versions from statically parseable manifests. For each detected manifest in the repo, read it and record direct dependencies as a flat list of `"name: version"` strings. Supported formats and what to read:
+- **key_dependencies** — extract library names and versions from statically parseable manifests. For each detected manifest in the repo, read it and record direct dependencies as a flat list of `"name: version"` strings.
+
+  **Scope is deliberately narrow.** Only the four manifest formats below are supported. Repos using any other manifest mark `key_dependencies: [] # manifest unsupported` and the `[API: <lib> v<version>]` annotation in `plan-generator` Step 1c is omitted for tasks in that repo. The annotation exists to surface exact API-compatibility risk to the Developer — silently emitting it from a half-parsed manifest would be worse than not emitting it at all. Extension to Gradle / Cargo / Gemfile / composer.json is a follow-up gated on a real user blocking on it.
+
+  Supported formats and what to read:
   - `pom.xml` → `<dependencies>` block; each `<dependency>` becomes `"groupId:artifactId: version"`. Where `<version>` is a property reference (`${...}`), record as `"groupId:artifactId: inherited"`.
   - `package.json` → `dependencies` and `devDependencies` objects; each entry becomes `"packageName: version"`.
   - `go.mod` → `require` block; each line becomes `"module/path: version"`.
   - `pyproject.toml` → `[tool.poetry.dependencies]` or `[project.dependencies]`; each entry becomes `"package: version"`.
-  - All other manifest formats (`build.gradle`, `build.gradle.kts`, `Cargo.toml`, `Gemfile`, `composer.json`, etc.): skip; set `key_dependencies: []` and add a comment `# extraction not yet implemented for <format>`.
+  - All other manifest formats (`build.gradle`, `build.gradle.kts`, `Cargo.toml`, `Gemfile`, `composer.json`, etc.): out of scope. Set `key_dependencies: []` and add the comment `# manifest unsupported` on the same line — exact wording, because `plan-generator` greps for it.
 
 - **Framework signals** (FastAPI, Spring Boot, MediatR, Next.js, NestJS, Gin, Rails, ...)
 - **Architecture signals** (layered, hexagonal, MVC, feature-folder, modules)
@@ -148,7 +152,7 @@ This is the full schema written to `.claude/context/language-config.md`. Every f
 - test_framework: "<e.g. pytest, xunit, junit5, vitest, playwright, go test>"
 - test_file_pattern: "<regex>"
 - permissions_requested: ["Bash(poetry:*)", "Bash(pytest:*)", ...]
-- key_dependencies: ["name: version", ...]  # optional; flat list extracted by Phase 2; empty list if manifest format unsupported
+- key_dependencies: ["name: version", ...]  # extracted by Phase 2 from supported manifests (pom.xml, package.json, go.mod, pyproject.toml). Unsupported manifests: `key_dependencies: [] # manifest unsupported`
 ```
 
 **Notes:**

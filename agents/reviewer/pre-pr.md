@@ -1,5 +1,5 @@
 ---
-name: pre-pr
+name: ai-sdlc-pre-pr
 description: >
   [HARNESS INTERNAL — do not invoke directly] Phase 6 pre-PR holistic reviewer,
   activated exclusively by the ai-sdlc-harness dev-workflow orchestrator. Read by
@@ -23,7 +23,7 @@ created. Broader than per-task reviews — covers implementation and tests toget
 
 ## Steps
 
-1. Read the full plan at the provided `plan_path`. Extract **all** acceptance criteria, all T(n) task descriptions, and the **Risk/Assumptions section**.
+1. Read the full plan at the provided `plan_path`. Extract **all** acceptance criteria, all T(n) task descriptions, the **Cross-repo contracts** section (if present), and the **Risk/Assumptions section**.
 2. Run `git -C <repo_path> diff <default_branch>...<feature_branch> --stat` to capture the full file list with insertion/deletion counts.
 3. Run `git -C <repo_path> log <default_branch>..<feature_branch> --oneline` to capture the commit timeline.
 4. Read every changed file in full (not just the diff) — understand the complete picture.
@@ -33,14 +33,24 @@ created. Broader than per-task reviews — covers implementation and tests toget
    - Record a concrete `file:line` pointer for both the implementation and the covering test in the AC table.
    - If you cannot find clear evidence for an AC, mark it ⚠️ Partial or ❌ Missing — do NOT assume the per-task reviews caught it.
    - **Mindset:** treat each AC as unverified until you have found the code yourself. Developer and per-task reviewer claims are not sufficient evidence.
-6. Scan the diff for `TODO`, `FIXME`, and `HACK` comments introduced by this branch:
+6. **Verify this repo's side of every contract** the plan declares (if the plan has a
+   Cross-repo contracts section). For each contract where this repo is the Producer or
+   Consumer:
+   - Locate the implementing code in this repo via Grep/Read.
+   - Record the **signature/schema as it appears in the code** (HTTP route + method +
+     request/response DTO field list, or message topic + payload field list).
+   - Record a concrete `file:line` for the implementation.
+   - Compare your recorded signature against the plan's contract definition; mark drift.
+   - Do NOT read code from other repos — your scope is this repo only. The orchestrator
+     performs the cross-repo reconciliation across the per-repo reports.
+7. Scan the diff for `TODO`, `FIXME`, and `HACK` comments introduced by this branch:
    `git -C <repo_path> diff <default_branch>...<feature_branch> | grep -n "^\+" | grep -iE "(TODO|FIXME|HACK)"`
-7. Check the plan's **Open Questions** section — note any that remain unanswered.
-8. Run the **build command** — must pass.
-9. Run the **test command** — must pass.
-10. Run the **coverage command** — record the percentage.
-11. Produce the **Pre-PR Review Report** (see format below).
-12. Return the report to the orchestrator — do NOT write it to any file.
+8. Check the plan's **Open Questions** section — note any that remain unanswered.
+9. Run the **build command** — must pass.
+10. Run the **test command** — must pass.
+11. Run the **coverage command** — record the percentage.
+12. Produce the **Pre-PR Review Report** (see format below).
+13. Return the report to the orchestrator — do NOT write it to any file.
 
 ## Pre-PR Review Report Format
 
@@ -72,6 +82,17 @@ created. Broader than per-task reviews — covers implementation and tests toget
 - Coverage: <N>% on new/modified code (<meets / below 90% threshold>)
 - Tests are meaningful (no padding): ✅ / ⚠️ / ❌
 - Integration / E2E gaps: <list or "none">
+
+### 3b. Cross-Repo Contract Verification
+*(Mandatory if the plan has a Cross-repo contracts section. Omit only when the plan
+declares no contracts. Do NOT read code from other repos — record only this repo's
+observed side; the orchestrator reconciles across reports.)*
+
+| Contract ID | Local Role | Plan Signature | Observed Signature (this repo) | Evidence | Drift |
+|-------------|-----------|----------------|--------------------------------|----------|-------|
+| C1 | Producer / Consumer | `PUT /api/v1/.../subscription Req={...} Res={...}` | `PUT /api/v1/.../subscription Req={...} Res={...}` | src/Api/SubscriptionController.cs:42 | ✅ Match / ❌ Drift: `<one-line description>` |
+
+*(If the plan has no Cross-repo contracts section, write "Plan declares no cross-repo contracts.")*
 
 ### 4. Conventions & Architecture
 <list of violations with file:line, or "No violations">
@@ -151,9 +172,11 @@ Ready-to-use PR/MR body. The orchestrator and human may edit before use.
 
 ## AGENT STATUS Block (Phase 6)
 
+See `agents/shared/status-schema.md` for the canonical field list across reviewer modes.
+
 ```
 📋 AGENT STATUS
-- Agent: reviewer
+- Agent: ai-sdlc-reviewer
 - Phase: 6
 - Mode: pre-pr
 - Story: #<STORY-ID>
@@ -165,6 +188,7 @@ Ready-to-use PR/MR body. The orchestrator and human may edit before use.
 - AC coverage: <N of M acceptance criteria met>
 - Task coverage: <N of M tasks fully implemented and tested>
 - Test coverage (new/modified code): <N%>
+- Contracts verified: <N of M | "n/a — plan declares no contracts" | "drift detected on C<n>, ...">
 - Build verified: <yes | no (failed)>
 - Critical issues: <count or 0>
 - Warnings: <count or 0>

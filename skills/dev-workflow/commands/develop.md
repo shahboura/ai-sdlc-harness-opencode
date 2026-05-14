@@ -62,7 +62,7 @@ Each lane tracks:
 - `active` — the currently running agent (tester, developer, or reviewer), if any
 - `phase` — `idle` | `testing` | `developing` | `reviewing`
 - `worktree` / `worktree_branch` — shared worktree for the current task (created by tester or developer)
-- `test_commit` — commit hash from the Tester AGENT STATUS (failing tests)
+- `test_commit` — commit hash extracted from the Tester's `Commit:` field (failing tests). Internal lane-state variable name; the source field on the block is `Commit:` per `agents/shared/status-schema.md`.
 - `impl_commit` — commit hash from the Developer AGENT STATUS (passing implementation)
 
 ### Main Loop
@@ -77,6 +77,18 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
    its dependencies **within the same repo** are ✅ Done. (Cross-repo dependencies do not
    exist — they are resolved via contracts defined in the plan.)
 
+   Dependencies are declared by the Planner as a `depends: T<n>[, T<n>...]` token in the
+   task row's **Notes** column (canonical format documented in
+   `skills/plan-generator/SKILL.md` → *Dependency notation*). To resolve:
+   - Read the candidate task's Notes cell.
+   - Match the regex `depends:\s*(T[A-Za-z0-9-]+(?:\s*,\s*T[A-Za-z0-9-]+)*)`.
+   - If matched, split the captured group on commas and trim whitespace — that is the
+     dependency list. Every listed Task ID must be ✅ Done in the **same repo** before this
+     task is eligible.
+   - If no `depends:` token is present, the task has no intra-repo dependencies.
+   - If the captured Task ID does not appear in this repo's tracker rows, treat it as a
+     planner error: leave the task in `pending`, surface to human, and do not advance the lane.
+
 2. **Update tracker**: T → 🔧 In Progress. Set `Started` in Task Metrics to the output of `date -u +"%Y-%m-%d %H:%M UTC"`.
 
 3. **Capture feature branch state** for the repo:
@@ -88,64 +100,89 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
 
 4. **Read the task's `test-required` flag** from the tracker's Notes column.
 
-**If `test-required: true` → Launch @tester (TDD path):**
+5. **Create the worktree** (orchestrator-side — per orchestrator-rules #3, the orchestrator
+   handles all git operations including worktree creation):
 
-Launch **@tester** with `run_in_background: true`, `name: "tester-<repo-name>"`, and `mode: "auto-tdd"`:
+   ```bash
+   UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
+          || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
+   if [ -z "$UID8" ]; then
+     echo "develop.md Step 1.5: UID8 generation failed — neither uuidgen nor python3 produced a value. Pause the lane and escalate to the human." >&2
+     exit 1
+   fi
+   WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
+   WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
+   if git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"; then
+     WORKTREE_FAILED=false
+   else
+     # Retry once — the most common failure (`could not lock config file .git/config: File exists` on Windows) is transient
+     if git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"; then
+       WORKTREE_FAILED=false
+     else
+       WORKTREE_FAILED=true
+     fi
+   fi
+   ```
+
+   Store `WORKTREE_PATH` and `WORKTREE_BRANCH` in the lane state immediately so a resumption
+   can find them even before the agent reports. Doing creation here (not inside the agent)
+   eliminates the pre-worktree stall mode — if creation succeeds, the worktree is guaranteed
+   to exist on disk before any agent launches; if it fails, the orchestrator picks the fallback
+   deterministically.
+
+**If `test-required: true` → Launch @ai-sdlc-tester (TDD path):**
+
+Launch **@ai-sdlc-tester** with `run_in_background: true`, `name: "tester-<repo-name>"`, and `mode: "auto-tdd"`:
 
    ```
-   @tester Write failing tests for task T<n> of Story $ARGUMENTS (auto-tdd mode).
+   @ai-sdlc-tester Write failing tests for task T<n> of Story $ARGUMENTS (auto-tdd mode).
+   The worktree has already been created for you — DO NOT create another one.
    Commit test code only — do NOT commit the task tracker.
    Do NOT write any production code.
-   Report your worktree path, branch, and commit hash in your AGENT STATUS.
+   Report your commit hash in your AGENT STATUS.
 
    [Include LANGUAGE_CTX — omit format-cmd]
-   [Include REPO_CTX]
+   [Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`]
+   [Include PATTERN_HINTS_CTX from the plan's Test Pattern References section if present]
 
    TEST OUTLINE FOR T<n> (from approved plan):
    <Copy the Test Outline section for this task exactly as written in the plan>
 
    Instructions:
-   1. Create a worktree with a fresh branch — NEVER check out the feature branch directly
-      (Git refuses it when already checked out in the main worktree):
-      ```bash
-      UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
-             || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
-      WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
-      WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
-      git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"
-      ```
-      If worktree creation fails, report it in AGENT STATUS.
-   2. Implement EXACTLY the tests listed in the Test Outline above — no more, no less.
-   3. Run the test command. Confirm each new test FAILS (red). Acceptable failure: assertion
+   1. Implement EXACTLY the tests listed in the Test Outline above — no more, no less.
+      Work inside the provided worktree (or directly on the feature branch if
+      `worktree_failed: true`).
+   2. Run the test command. Confirm each new test FAILS (red). Acceptable failure: assertion
       error or "type/method not found" (expected — impl doesn't exist yet). NOT acceptable:
       compile errors in test code itself (wrong syntax, wrong test framework usage).
-   4. Commit with co-author trailer — test code only:
+   3. Commit with co-author trailer — test code only:
       ```
       #<STORY-ID> #T<n> test: <slug>
 
       Co-Authored-By: Claude Code <noreply@anthropic.com>
       ```
-   5. Report `test_commit` hash and the list of red tests in AGENT STATUS.
+   4. Report `Commit:` hash and the list of red tests in AGENT STATUS.
    ```
 
 Mark lane as `phase: "testing"`.
 
-**If `test-required: false` → Launch @developer (direct path):**
+**If `test-required: false` → Launch @ai-sdlc-developer (direct path):**
 
-Launch **@developer** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
+Launch **@ai-sdlc-developer** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @developer Implement task T<n> for Story $ARGUMENTS.
+   @ai-sdlc-developer Implement task T<n> for Story $ARGUMENTS.
    This task is test-required: false — no pre-written tests exist. Implement production code only.
+   The worktree has already been created for you — DO NOT create another one.
    Commit production code only — do NOT commit the task tracker.
-   Report your worktree path, branch, and commit hash in your AGENT STATUS.
+   Report your commit hash in your AGENT STATUS.
 
    [Include LANGUAGE_CTX — omit test-cmd]
-   [Include REPO_CTX]
+   [Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`]
    [Include CONTRACTS_CTX if multi-repo]
 
-   Create a worktree in this repo and work inside it. If worktree creation fails,
-   report it in your AGENT STATUS and work directly on the feature branch.
+   Work inside the provided worktree (or directly on the feature branch if
+   `worktree_failed: true`).
    ```
 
 Mark lane as `phase: "developing"`.
@@ -160,19 +197,19 @@ Parse the `📋 AGENT STATUS` block from the tester.
 
 **If `Outcome: SUCCESS`:**
 
-1. Extract `Worktree`, `Worktree branch`, `test_commit`, `Red tests` from Tester AGENT STATUS.
+1. Extract `Worktree`, `Worktree branch`, `Commit` (Tester's), `Red tests` from Tester AGENT STATUS. Cache the commit hash as `test_commit` in lane state.
 2. Record `Test Written` in Task Metrics: `date -u +"%Y-%m-%d %H:%M UTC"`.
-3. Launch **@developer** in the **SAME worktree** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
+3. Launch **@ai-sdlc-developer** in the **SAME worktree** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @developer Implement task T<n> for Story $ARGUMENTS. Failing tests are already in the worktree.
+   @ai-sdlc-developer Implement task T<n> for Story $ARGUMENTS. Failing tests are already in the worktree.
    Your job: make ALL failing tests pass. Do NOT modify the test files — only write production code.
    Commit production code only — do NOT commit the task tracker.
    Report your worktree path, branch, and commit hash in your AGENT STATUS.
 
    [Include LANGUAGE_CTX — omit test-cmd]
    [Include WORKTREE_CTX, plus these additional fields:]
-   - Tester commit: <test_commit from Tester AGENT STATUS>
+   - Tester commit: <Commit from Tester AGENT STATUS (cached as test_commit in lane state)>
    - Red tests to turn green: <Red tests list from Tester AGENT STATUS>
    [Include CONTRACTS_CTX if multi-repo]
 
@@ -216,10 +253,10 @@ Parse the `📋 AGENT STATUS` block from the developer.
    Record `Green At` in Task Metrics: `date -u +"%Y-%m-%d %H:%M UTC"`.
    Store developer commit hash as `impl_commit` in the lane state.
 2. Update tracker: T(n) → 🔄 In Review.
-3. Launch **@reviewer** with `run_in_background: true`, `name: "reviewer-<repo-name>"`, and `mode: "auto"`:
+3. Launch **@ai-sdlc-reviewer** with `run_in_background: true`, `name: "reviewer-<repo-name>"`, and `mode: "auto"`:
 
    ```
-   @reviewer Review task T<n> for Story $ARGUMENTS.
+   @ai-sdlc-reviewer Review task T<n> for Story $ARGUMENTS.
 
    [Include LANGUAGE_CTX — omit restore-cmd and format-cmd]
    [Include WORKTREE_CTX, plus:]
@@ -244,11 +281,13 @@ Parse the `📋 AGENT STATUS` block from the developer.
    2. CODE QUALITY (Phase B): Only if spec passes — run the build command at the worktree
       path, evaluate language conventions and PR checklist.
 
-   Produce your structured review verdict. Label comments as:
-   - [R<n>] — change required in production code (Developer must fix)
-   - [T<n>] — change required in test code (Tester must fix)
-   - [S<n>] — suggestion (non-blocking)
-   Do NOT update the tracker — the orchestrator handles that.
+   Produce your structured review verdict. Label comments per `agents/reviewer/index.md`:
+   - [S<n>] — spec compliance failure (Phase A). Place the comment against the file that needs
+     to change to satisfy the plan — production or test.
+   - [R<n>] — quality issue in production code (Phase B) — routed to the Developer.
+   - [T<n>] — quality issue in test code (Phase B) — routed to the Tester.
+   Suggestions are NOT a separate prefix — emit them as `SUGGESTION` severity inside [R<n>] or
+   [T<n>]. Do NOT update the tracker — the orchestrator handles that.
    Return your full review report.
    ```
 
@@ -262,10 +301,29 @@ Parse the `📋 AGENT STATUS` block from the developer.
 
 **If `Outcome: BLOCKED`:**
 - Present blocker to human for resolution.
+- **Special case — `Next action: "escalate to human — spec judgement: test vs impl"`:**
+  the Developer detected that one or more **previously-green tests** broke as a side effect
+  of T(n)'s implementation. This is the cannot-self-resolve path defined in
+  `agents/developer/index.md` → *Broken Pre-Existing Tests*. The Developer cannot edit tests;
+  the Tester cannot decide whether the impl or the test is wrong. Surface the `Blockers`
+  list to the human verbatim and ask them to pick one branch:
+  - **(a) Impl is wrong** — re-invoke @ai-sdlc-developer in the SAME worktree with the broken tests
+    as focused fix instructions; tests stay untouched.
+  - **(b) Test needs updating** — invoke @ai-sdlc-tester in the SAME worktree with `mode: "auto-tdd"`,
+    pointing at the specific tests to update (note: scope is test-edit, not new test
+    authoring); after tester SUCCESS, re-invoke @ai-sdlc-developer to verify the worktree builds and
+    all tests are green, then resume the normal review path (Step 3 onwards).
 
-**If `Next action: "worktree failed — retry without isolation"`:**
-- Re-invoke developer without worktree instructions. Developer works directly on the
-  feature branch in the repo.
+  Do NOT auto-route to either agent — wait for the human's selection. Do not advance the
+  lane while the question is open.
+
+> **Note:** The agent-side `Next action: "worktree failed — retry without isolation"`
+> branch from earlier versions is no longer reachable — the orchestrator creates
+> the worktree in Step 1 (sub-step 5) before any agent launch, so worktree-creation
+> failures are handled deterministically before the agent runs. If an agent reports
+> this status anyway (a legacy or out-of-date agent definition), treat it as a
+> warning and proceed; the worktree should already exist or `worktree_failed: true`
+> should already be in the prompt.
 
 #### Step 4: Handle Reviewer Completion
 
@@ -311,16 +369,23 @@ EOF
 
    Do NOT pause the workflow or notify the human — continue immediately to rework.
 
-2. **Classify review comments** by type:
-   - `[R<n>]` — production code changes → route to **Developer**
-   - `[T<n>]` — test code changes → route to **Tester**
-   - `[S<n>]` — suggestions (non-blocking, include for awareness but do not block)
+2. **Classify review comments** by prefix (authoritative definitions in
+   `agents/reviewer/index.md` and orchestrator rule *Structured Review Comments*):
+   - `[R<n>]` — production-code change → route to **Developer**
+   - `[T<n>]` — test-code change → route to **Tester**
+   - `[S<n>]` — spec compliance failure → route by the **file path inside the comment**:
+     production file → Developer, test file → Tester. If a single `[S<n>]` mentions both
+     (e.g. plan requires both impl and test changes), route to whichever agent owns the file
+     listed in the comment; if ambiguous, default to the Developer and include the comment
+     verbatim so they can flag it.
+   When both Developer- and Tester-bound comments exist in the same round, invoke the Tester
+   first (so the failing/refined tests are in the worktree) and then the Developer.
 
 3. **If there are `[T<n>]` comments (test rework needed):**
-   Re-invoke **@tester** in the SAME worktree with `run_in_background: true`, `name: "tester-<repo-name>"`, `mode: "auto-tdd"`:
+   Re-invoke **@ai-sdlc-tester** in the SAME worktree with `run_in_background: true`, `name: "tester-<repo-name>"`, `mode: "auto-tdd"`:
 
    ```
-   @tester Address the following test review comments for task T<n> of Story $ARGUMENTS.
+   @ai-sdlc-tester Address the following test review comments for task T<n> of Story $ARGUMENTS.
    You are working in the EXISTING worktree at: <worktree-path>
    Do NOT modify production code — only fix the test code.
 
@@ -339,10 +404,10 @@ EOF
    Otherwise, proceed directly to re-launch Reviewer.
 
 4. **If there are `[R<n>]` comments (production code changes needed):**
-   Re-invoke **@developer** in the SAME worktree with `run_in_background: true`, `name: "developer-<repo-name>"`, `mode: "auto"`:
+   Re-invoke **@ai-sdlc-developer** in the SAME worktree with `run_in_background: true`, `name: "developer-<repo-name>"`, `mode: "auto"`:
 
    ```
-   @developer Address the following review comments for task T<n> of Story $ARGUMENTS.
+   @ai-sdlc-developer Address the following review comments for task T<n> of Story $ARGUMENTS.
    You are working in the EXISTING worktree at: <worktree-path>
    Do NOT modify the test files — only fix production code.
 

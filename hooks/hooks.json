@@ -2,7 +2,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Edit",
+        "matcher": "Write|Edit|MultiEdit",
         "hooks": [
           {
             "type": "command",
@@ -17,7 +17,7 @@
         ]
       },
       {
-        "matcher": "Write|Edit",
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit",
         "hooks": [
           {
             "type": "command",
@@ -29,6 +29,11 @@
       {
         "matcher": "Bash",
         "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/bash-write-guard.sh",
+            "timeout": 10
+          },
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/validate-commit-msg.sh",
@@ -73,7 +78,7 @@
     ],
     "SubagentStart": [
       {
-        "matcher": "tester",
+        "matcher": "ai-sdlc-tester",
         "hooks": [
           {
             "type": "command",
@@ -89,7 +94,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'test -f .claude/context/provider-config.md && touch .claude/context/.stop-failure || true'",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/stop-failure-marker.sh",
             "timeout": 5
           }
         ]
@@ -113,7 +118,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "First, check if ai/tasks/ contains any .md tracker files. If none exist, there is no active workflow — skip this entirely and do nothing. Otherwise: context was just compacted — critical workflow state may have been lost. Reconstruct it now. Find the most recent .md file in ai/tasks/ (by filename). Read it fully. Extract: (1) Story ID from filename, (2) every task row with ID, repo if multi-repo, description, and status, (3) current phase — if any task is In Progress or In Review: Phase 3 (TDD Development Loop); all dev tasks Done, human approval not set: Phase 4; human approval set but Test Hardening not complete: Phase 5; Test Hardening complete: Phase 6. Check .claude/context/repos-paths.md for repo paths. For each repo get the current branch and list worktrees. Find the latest plan in ai/plans/. Output a structured state block: story ID, tracker path, phase, all task statuses (one line each), worktrees, branches, plan path. Then continue the workflow from where it was interrupted."
+            "prompt": "First, check if ai/tasks/ contains any .md tracker files. If none exist, there is no active workflow — skip this entirely and do nothing. Otherwise: context was just compacted — critical workflow state may have been lost. Reconstruct it now. Find the most recent .md file in ai/tasks/ (by filename). Read it fully. Extract: (1) Story ID from filename, (2) every task row with ID, repo if multi-repo, description, and status, (3) current phase — if any task is In Progress or In Review: Phase 3 (TDD Development Loop); all dev tasks Done, human approval not set: Phase 4; human approval set but Test Hardening not complete: Phase 5; Test Hardening complete: Phase 6. Check .claude/context/repos-paths.md for repo paths. For each repo get the current branch and run `git -C <repo-path> worktree list`. For every listed worktree whose branch matches `worktree/<story-id>-t<n>-<uid>`, look up task T<n> in the tracker: preserve worktrees whose task is 🔧 In Progress or 🔄 In Review (the resumed session will pick them up); flag worktrees whose task is ✅ Done or has no matching tracker row as candidates for removal (do NOT remove yet — surface the list and ask the human to confirm). Repos running in worktree-failed fallback mode (no worktrees) are valid; do not flag. Find the latest plan in ai/plans/. Output a structured state block: story ID, tracker path, phase, all task statuses (one line each), worktree reconciliation table (path, branch, task ID, preserve/remove classification), branches, plan path. Then continue the workflow from where it was interrupted."
           }
         ]
       }

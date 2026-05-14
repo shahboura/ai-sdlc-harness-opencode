@@ -13,10 +13,10 @@
 
 ## Steps
 
-Delegate to the **@planner** agent:
+Delegate to the **@ai-sdlc-planner** agent:
 
 ```
-@planner Take User Story / Issue $ARGUMENTS. Pull the story from the configured
+@ai-sdlc-planner Take User Story / Issue $ARGUMENTS. Pull the story from the configured
 work item provider (read provider-config.md first), analyse the requirements
 thoroughly, and surface any clarifying questions. Do NOT proceed to planning
 until all ambiguities are resolved. Use the story-intake skill.
@@ -27,7 +27,7 @@ until all ambiguities are resolved. Use the story-intake skill.
 If the human provides answers to clarifying questions, pass them to the Planner:
 
 ```
-@planner The human provided these answers to the clarifying questions:
+@ai-sdlc-planner The human provided these answers to the clarifying questions:
 <answers>
 
 Resolve the ambiguities with this information and confirm the requirements are complete.

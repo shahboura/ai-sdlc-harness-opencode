@@ -40,14 +40,23 @@ Also locate the plan file at `ai/plans/*<STORY-ID>*`.
 ### Step 2 — Fetch PR Comments (per repo)
 
 For each affected repo, determine the git provider from `provider-config.md` and read the
-corresponding git adapter at `skills/providers/<git-provider>/pull-requests.md` to fetch
-open review comments.
+corresponding **PR review comments adapter** at
+`skills/providers/<git-provider>/pr-comments.md`. This is distinct from
+`pull-requests.md` (which covers PR creation) — the comments adapter declares the
+`pr.find_for_branch`, `pr.list_review_comments`, and `pr.reply_to_review_comment`
+capabilities used in this phase.
+
+If `pr-comments.md` does not exist for the configured provider, surface this to the
+human and end the phase — Phase 7 cannot proceed without the primitives. (See
+`skills/providers/shared/capabilities.md` for the canonical capability list and which
+providers declare support.)
 
 Use the adapter to:
-1. Look up the open PR/MR for the repo's feature branch.
-2. Fetch all review threads / comment threads.
+1. Look up the open PR/MR for the repo's feature branch (`pr.find_for_branch`).
+2. Fetch all review threads / comment threads (`pr.list_review_comments`).
 3. Filter to **unresolved threads only** — skip automated bot comments, CI check summaries,
-   and already-resolved threads.
+   and already-resolved threads. The adapter declares its own bot-filter starter list;
+   apply it client-side.
 
 Collect for each unresolved comment:
 - A sequential ID: `[PC-<n>]` (globally numbered across all repos, starting at 1)
@@ -72,12 +81,12 @@ Wait for the human's response. If [2], end the phase without updating metrics.
 
 ### Step 3 — Reviewer: Challenge Comments Against Plan and AC
 
-For each repo that has unresolved comments, invoke `@reviewer` with
+For each repo that has unresolved comments, invoke `@ai-sdlc-reviewer` with
 `mode: pr-comment-analysis` and `run_in_background: true`
 (name: `reviewer-prcomment-<repo-name>`):
 
 ```
-@reviewer Analyse PR review comments for Story $ARGUMENTS.
+@ai-sdlc-reviewer Analyse PR review comments for Story $ARGUMENTS.
 
 MODE: pr-comment-analysis
 
@@ -113,6 +122,18 @@ together, clearly separated by repo, with a merged summary count at the top:
 ```
 Total across all repos — Valid: N | Invalid: N | Partial: N
 ```
+
+**Verdict handling per repo report:**
+
+Parse the `Verdict:` and `Unclassified:` lines from each sub-report's AGENT STATUS block.
+
+- `Verdict: ANALYSIS_COMPLETE` — no special action; include the report as-is in the merged
+  output.
+- `Verdict: ANALYSIS_PARTIAL` — prepend an `## Unclassified Comments` block at the top of
+  the merged output naming each repo with a non-zero `Unclassified:` count. The human at
+  GATE #4 must decide whether to re-fetch, skip, or accept the partial classification.
+- `Verdict: PLAN_NOT_FOUND` — this is `Outcome: FAILED`. Surface as a hard error per
+  `orchestrator-rules.md` error handling. Do not proceed to Step 5 — escalate to the human.
 
 ### Step 5 — Present PR Comment Analysis Report to Human (GATE #4)
 
@@ -155,10 +176,15 @@ no tasks are created, no commits made.
 
 Collect the accepted `[PC-<n>]` comments along with the Reviewer's proposed task outlines.
 
-Invoke `@planner` (foreground) with the existing tracker and plan:
+Invoke `@ai-sdlc-planner` (foreground) with the existing tracker and plan. The Planner's
+behaviour in this mode is documented in `skills/plan-generator/SKILL.md` under
+**Phase 7 Amendment Mode** — the prompt below sets the orchestrator-side context
+the skill needs (paths, story ID, accepted comments, round number); the skill
+handles the row template, dependency-graph regeneration, and the no-reorder /
+no-remove invariant on existing rows.
 
 ```
-@planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
+@ai-sdlc-planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
 
 MODE: pr-response-tasks
 
@@ -166,6 +192,10 @@ CONTEXT:
 - Tracker path: <ai/tasks/<existing-tracker-filename>>
 - Plan path: <ai/plans/<existing-plan-filename>>
 - Story ID: #<STORY-ID>
+- Round: <N>   # 1 on the first Phase 7 invocation for this story, 2 on a second
+               # round of PR comments, etc. Derived by the orchestrator from
+               # the count of existing `## Amendments (PR Review Round …)`
+               # headings in the tracker, plus one.
 
 ACCEPTED PR COMMENTS TO ADDRESS:
 [PC-<n>] Repo: <repo-name> | File: <file-path>:<line>
@@ -189,8 +219,15 @@ Instructions:
 4. Add a Test Outline section for each new task to the PLAN document, following the same
    format and naming convention as the original Test Outline (Subject_Scenario_Outcome).
    Base the test names on the Reviewer's proposed task description.
-5. Update the Workflow Metrics table: add `PR review response started | <timestamp>`.
-6. Save the updated tracker and plan files. Verify each by reading them back.
+5. **Regenerate the tracker's `## Dependency Graph` section** to include the new tasks.
+   Follow the rendering rules in `plan-generator/SKILL.md` → *Dependency Graph rendering
+   rules*. PR-response tasks typically have no `depends:` token (they originate from PR
+   feedback, not the original DAG), so they appear as root nodes that flow into their
+   repo's `T-TEST-<RepoName>` node via the implicit Phase 5 edge. If a PR-response task's
+   Notes contains an explicit `depends:` token (rare — only when the human edits it during
+   the Phase 7 gate), honour it.
+6. Update the Workflow Metrics table: add `PR review response started | <timestamp>`.
+7. Save the updated tracker and plan files. Verify each by reading them back.
 ```
 
 Parse the Planner's `📋 AGENT STATUS`. If `Outcome: PARTIAL` or `FAILED`, follow the
@@ -219,12 +256,54 @@ After all new tasks are ✅ Done across all repos, proceed to Step 9.
 Update the tracker Workflow Metrics: set `PR review response completed` to
 `date -u +"%Y-%m-%d %H:%M UTC"`.
 
-Amend the Phase 6 tracker commit (the tracker is already committed after Phase 6):
+Create a **new tracker-update commit** on top of the Phase 7 task commits. **Do NOT amend.**
+By this point, HEAD is the most recent Phase 7 task squash-merge — not the Phase 6 tracker
+commit — so `git commit --amend` would silently rewrite a task commit's tree with tracker
+content. A new commit also keeps the tracker's recorded squash-merge SHAs accurate (an
+amend that autosquashes back into the Phase 6 tracker commit would rewrite the SHAs of
+every Phase 7 task commit above it, making the values just recorded in the tracker stale).
+
+First, determine whether the workspace is itself a git repository:
+
+```bash
+git -C ai/tasks/ rev-parse --is-inside-work-tree 2>/dev/null
+```
+
+**If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
 
 ```bash
 git add ai/tasks/
-git commit --amend --no-edit
+git commit -m "$(cat <<'EOF'
+#<STORY-ID> #TPR-RESP: record PR review response completion
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+EOF
+)"
+git push origin <feature-branch>
 ```
+
+**If the workspace is NOT a git repo** (tracker was copied into the repo in Phase 6 Step 6):
+
+Sync the updated tracker back into each affected repo using the **Read + Write** tools
+(not `cp` — the `bash-write-guard` hook blocks Bash writes to `ai/` paths):
+
+- Read `ai/tasks/<tracker-file>` (workspace) → Write to `<REPO_PATH>/ai/tasks/<tracker-file>`
+
+Then commit and push from the repo:
+
+```bash
+git -C "<REPO_PATH>" add ai/tasks/
+git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
+#<STORY-ID> #TPR-RESP: record PR review response completion
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+EOF
+)"
+git -C "<REPO_PATH>" push origin <feature-branch>
+```
+
+Both pushes are fast-forward (a new commit on top of the remote's tip), so
+`--force-with-lease` is not required.
 
 Present to the human:
 
@@ -240,15 +319,15 @@ Would you like me to reply to the addressed PR comment threads with commit refer
 
 **If YES:** Read the tracker's Notes column for every task whose Notes contain `PR-comment:`.
 Extract the `thread_id=<value>` stored there by the Planner in Step 7. For each addressed
-`[PC-<n>]` comment, use the git provider adapter to post a reply on the original thread:
+`[PC-<n>]` comment, use the PR comments adapter to post a reply on the original thread:
 
 ```
 Addressed in commit <squash-merge-hash>: <one-sentence summary of what was changed>
 ```
 
-Route through the provider adapter in `skills/providers/<git-provider>/pull-requests.md`.
-The thread IDs come from the tracker — not from session memory — so this step is safe to
-run even after a session interruption.
+Route through `skills/providers/<git-provider>/pr-comments.md` (the
+`pr.reply_to_review_comment` capability). The thread IDs come from the tracker — not from
+session memory — so this step is safe to run even after a session interruption.
 
 ---
 

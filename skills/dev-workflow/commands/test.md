@@ -12,8 +12,16 @@ The Tester's job here is:
 1. **Gap-fill** — write integration and end-to-end tests that the per-task unit tests missed
    (cross-repo contract validation, edge cases requiring multiple components, etc.)
 2. **Coverage enforcement** — run coverage analysis and add tests until ≥ 90% line coverage
-   is reached on newly introduced/modified code only. Do NOT go out of scope to cover pre-existing code.
+   is reached on **all newly introduced/modified code in this story**. Coverage scope is the
+   union of every changed file regardless of which task introduced it — including code from
+   `test-required: false` tasks. Do NOT go out of scope to cover pre-existing code.
 3. **No duplication** — do NOT rewrite unit tests that already exist from Phase 3
+4. **No padding** — if a `test-required: false` task contains branching logic that can only
+   reach 90% via meaningful tests, that is a Planner mis-classification, not a Tester problem.
+   Add the minimum meaningful tests required (mirroring Phase 3 unit-style conventions), and
+   flag the mis-classification in your AGENT STATUS `Blockers`/`Next action` field so the
+   human can see it. Never invent tests purely to inflate coverage — the reviewer rejects
+   coverage-padding tests.
 
 ## Prerequisites
 
@@ -47,11 +55,11 @@ For each affected repo (one per repo in the Repo Status section):
 
 #### Step 1: Harden Tests
 
-Launch **@tester** with `mode: "auto-harden"` (can use `run_in_background: true` for parallel
+Launch **@ai-sdlc-tester** with `mode: "auto-harden"` (can use `run_in_background: true` for parallel
 per-repo hardening). Pass the repo path:
 
 ```
-@tester Harden tests for Story $ARGUMENTS in repo <RepoName> (auto-harden mode).
+@ai-sdlc-tester Harden tests for Story $ARGUMENTS in repo <RepoName> (auto-harden mode).
 Unit tests from Phase 3 already exist in the codebase at <REPO_PATH>.
 Your job: gap-fill integration/E2E tests and enforce >=90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code.
 
@@ -64,14 +72,22 @@ Commit test code only — do NOT update the task tracker.
 (Templates: ../context/prompt-templates.md)
 
 Instructions:
-1. Read the plan at ai/plans/* to understand the story's acceptance criteria.
+1. Read the plan at ai/plans/* to understand the story's acceptance criteria. Note which
+   tasks were marked `test-required: false` — their production code is in scope for the
+   coverage gate even though Phase 3 wrote no tests for them.
 2. Run the test command — confirm existing Phase 3 tests are passing.
-3. Run the coverage command — identify coverage gaps in new/modified code only. Do NOT go out of scope to cover pre-existing code.
+3. Run the coverage command — identify coverage gaps across **all** new/modified code in
+   this story (including `test-required: false` task code). Do NOT go out of scope to cover
+   pre-existing code.
 4. Write integration/E2E tests to close meaningful gaps in new/modified code.
    Assert the full observable contract in every test — not just HTTP status codes:
    - Success responses: assert every response body field defined in the plan's API contract.
    - Error responses (4xx, 5xx): assert the status code AND every field in the error envelope
      (e.g. `error`, `message`) as specified in the plan. Status-code-only assertions are incomplete.
+   - If you reach a `test-required: false` code path that needs tests to clear the 90% gate,
+     add the minimum meaningful tests AND flag the mis-classification in your AGENT STATUS
+     (`Blockers` line: `test-required: false on T<n> needed tests for coverage`). Do NOT
+     pad with assertion-free tests.
 5. Re-run until all tests pass and coverage is >=90% on new/modified code.
 6. Commit with co-author trailer:
    ```
@@ -85,10 +101,10 @@ After tester returns SUCCESS: **update tracker** — set `T-TEST-<RepoName>` →
 
 #### Step 2: Review Tests
 
-After tester completes, launch **@reviewer** with `mode: "auto"`:
+After tester completes, launch **@ai-sdlc-reviewer** with `mode: "auto"`:
 
 ```
-@reviewer Review the test hardening for Story $ARGUMENTS in repo <RepoName>.
+@ai-sdlc-reviewer Review the test hardening for Story $ARGUMENTS in repo <RepoName>.
 Unit tests from Phase 3 are already present. Review only the NEWLY ADDED integration/E2E tests.
 Run the test command at <REPO_PATH> to verify all tests (Phase 3 + new) pass.
 Run the coverage command to verify >=90% line coverage on new/modified code only.
@@ -104,7 +120,7 @@ Do NOT update the tracker — return your review report to the orchestrator.
 
 - If `Verdict: APPROVED` — **Update tracker**: set `T-TEST-<RepoName>` → ✅ Done, set `Reviewer Verdict` to ✅ Approved, and set task `Completed` in Task Metrics. Then proceed to next repo (or Phase 6 if all repos done).
 
-- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Relay `[R<n>]` or `[T<n>]` comments to Tester; tester addresses and resubmits. After tester SUCCESS, update back to 🔄 In Review. Loop back to Step 2.
+- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Phase 5 only writes test code, so every structured comment is routed to the Tester regardless of prefix: relay all `[T<n>]`, `[S<n>]`, and any `[R<n>]` comments (the last is an out-of-band reviewer error worth surfacing — include them verbatim and flag the prefix mismatch to the human if they recur). The tester addresses and resubmits. After tester SUCCESS, update back to 🔄 In Review. Loop back to Step 2.
 
 ### Parallel Hardening (Multi-Repo)
 
