@@ -267,6 +267,8 @@ A Markdown file at `ai/tasks/` that tracks every task's status through the workf
 
 Dev tasks (`T1`, `T2`, ...) track Phase 3 implementation. One `T-TEST-<RepoName>` row per affected repo tracks Phase 5 test hardening through the same lifecycle — the orchestrator records the tester commit hash and reviewer verdict before marking it Done. Task Metrics additionally capture `Test Written` (when the tester commits failing tests for a `test-required: true` task) and `Green At` (when the developer commits the passing implementation).
 
+Cross-task dependencies are declared in the Notes column with a canonical `depends: T<n>[, T<n>...]` token; the orchestrator gates each lane on every listed Task ID being ✅ Done. The plan-generator also renders a Mermaid `flowchart LR` of the full task graph in a `## Dependency Graph` section of the tracker.
+
 ### Worktree Isolation
 
 The Developer works in a temporary git worktree — a separate checkout of the repo. This means:
@@ -289,11 +291,11 @@ The Reviewer performs a three-phase review:
 
 0. **Ownership & convention pre-check** — Runs first, before any code is read. Verifies no forbidden path writes (developer/tester must not touch `./ai/`), commit message format, no emoji shortcodes in Markdown, no sensitive files (`.env`, `.pem`, `.key`). Any failure immediately returns `🔄 Changes Requested` and skips the later phases.
 1. **Spec compliance** — Does the code match the plan? Failures produce `[S1]`, `[S2]`, ... comments. If spec fails, code quality is skipped entirely.
-2. **Code quality** — Are conventions followed? Are there bugs? Produces `[R1]`, `[R2]`, ... comments with severities: `CRITICAL` (must fix), `WARNING` (should fix), `SUGGESTION` (consider).
+2. **Code quality** — Are conventions followed? Are there bugs? Produces `[R1]`, `[R2]`, ... comments on production code and `[T1]`, `[T2]`, ... comments on test code, with severities: `CRITICAL` (must fix), `WARNING` (should fix), `SUGGESTION` (consider). The orchestrator routes `R` → Developer, `T` → Tester, and `S` → by file path; when both impl and test comments exist on the same task, the Tester runs first.
 
 **Phase 2 planning** includes a dependency version pre-flight: the plan-generator reads `key_dependencies` from `language-config.md` and stamps each task's Notes with `[API: <lib> v<version>]` for any task that prescribes a named library method or type. Developers see the exact version at the point of implementation, preventing API-compatibility failures from wrong-version assumptions.
 
-**Phase 6 pre-PR holistic review** produces a structured report covering: full change surface (every file changed with category), AC-by-AC verification with implementation and test evidence, task coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene, risk & assumptions review vs plan, open items (TODO/FIXME/HACK + unanswered story questions), and a ready-to-use PR description draft.
+**Phase 6 pre-PR holistic review** produces a structured report covering: full change surface (every file changed with category), AC-by-AC verification with implementation and test evidence, task coverage, test quality, conventions, SOLID/DRY/YAGNI, security, git hygiene, risk & assumptions review vs plan, open items (TODO/FIXME/HACK + unanswered story questions), and a ready-to-use PR description draft. For multi-repo stories, each repo's reviewer also emits a **Contract Verification table** with observed signatures; the orchestrator does a lexical cross-repo compare and surfaces any drift to the human before PR creation.
 
 ## Branch & Commit Conventions
 
@@ -347,7 +349,7 @@ The plugin ships with hooks that enforce harness invariants at the Claude Code l
 
 **Shared library** — every guard script sources `scripts/_hook-lib.sh` for python probing, payload reading, dotted-path field extraction (including list-shaped `tool_response` blocks), exit helpers, and workspace-root walk-up. Commit-command parsing lives in `scripts/_git_argparse.py` — a `shlex`-based parser that replaces the brittle single-regex extractor.
 
-**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). 147 cases across 9 suites; run via `tests/hooks/run.sh`.
+**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). Skill files have doc-grep regression tests under `tests/skills/`, and a behavioural worktree fixture lives under `tests/integration/`. Run everything via `tests/run.sh` (the top-level aggregator), or individual suites via their own `run.sh`.
 
 ## Utility Commands
 
