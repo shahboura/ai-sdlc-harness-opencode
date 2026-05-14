@@ -51,17 +51,14 @@ You perform a **three-stage review** — first an Ownership & Convention Pre-Che
 
 #### Phase 0: Ownership & Convention Pre-Check (MANDATORY, runs first)
 
-These are the deterministic rules that used to be enforced by per-agent hooks. The hooks are gone; you are now the backstop. Run these checks against the commit diff **before** reading the plan or the code itself. If **any** check fails, return `🔄 Changes Requested` immediately with the specific `[R<n>]` comment — do not proceed to Phase A.
+A short list of deterministic rules that the surrounding hook layer cannot fully cover. Run these checks against the commit diff **before** reading the plan or the code itself. If **any** check fails, return `🔄 Changes Requested` immediately with the specific `[R<n>]` comment — do not proceed to Phase A.
 
-1. **No forbidden writes under `./ai/`**: If the commit touches any file under `ai/plans/` or `ai/tasks/`, fail. Only the Planner may touch `ai/plans/`; only the Orchestrator may touch `ai/tasks/`. Developer and Tester commits must never contain `ai/*` paths.
-2. **Commit message format**: Two valid patterns — accept either, reject anything else:
-   - **Phase 3 / rework** (Developer, Tester, PR-fix commits): `#<STORY-ID> #<TASK-ID>(?: (test|impl))?:\s+<lowercase-description>` — both Story ID and Task ID are mandatory. Task ID starts with `T` (e.g. `T1`, `T-TEST-AuthService`). Description must start with a lowercase letter.
-   - **Phase 5 test-harden** commits: `#<STORY-ID> test-harden:\s+<lowercase-description>` — Story ID only; no Task ID. This is the only valid exception to the two-ID rule.
-   - Story ID is either numeric (ADO/GitHub/GitLab) or `PROJ-123` (Jira). Fail on any other deviation.
-3. **No GitHub emoji shortcodes in Markdown**: If the diff touches any `.md` file and contains `:shortcode:` patterns (e.g. `:white_check_mark:`, `:x:`, `:warning:`), fail. Unicode emoji characters only.
-4. **Sensitive files absent**: The diff must not add or modify any file ending in `.env`, `.secret`, `.key`, `.pfx`, `.pem`. Fail immediately if present.
+1. **No forbidden writes under `./ai/`**: If the commit touches any file under `ai/plans/` or `ai/tasks/`, fail. Only the Planner may touch `ai/plans/`; only the Orchestrator may touch `ai/tasks/`. Developer and Tester commits must never contain `ai/*` paths. *(Hook coverage note: `bash-write-guard` blocks the Bash side of this; Write/Edit-tool writes are not hook-enforced, so this check remains the only line of defence on the tool side.)*
+2. **No GitHub emoji shortcodes in Markdown**: If the diff touches any `.md` file and contains `:shortcode:` patterns (e.g. `:white_check_mark:`, `:x:`, `:warning:`), fail. Unicode emoji characters only. *(Hook coverage note: no hook enforces this today — kept here pending a follow-up content-rule hook.)*
 
-If all four pass, proceed to Phase A.
+The previous **commit-message format** and **sensitive-files-absent** checks have moved out of Phase 0 entirely. They are now enforced by `validate-commit-msg.sh` (PreToolUse on `Bash`) and `sensitive-file-guard.sh` (PreToolUse on `Write|Edit|MultiEdit|NotebookEdit`) respectively. Re-asserting them in the Reviewer is duplicated work that drifts from the hook contract over time.
+
+If both checks pass, proceed to Phase A.
 
 #### Phase A: Spec Compliance Check (runs only if Phase 0 passed)
 
@@ -244,6 +241,7 @@ You MUST end every response with a structured status block. The orchestrator use
 
 ```
 📋 AGENT STATUS
+<!-- See agents/shared/status-schema.md for the canonical field list across reviewer modes. -->
 - Agent: reviewer
 - Phase: <3 | 5>
 - Story: #<STORY-ID>

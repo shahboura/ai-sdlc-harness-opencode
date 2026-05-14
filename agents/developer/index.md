@@ -197,7 +197,7 @@ The `Co-Authored-By` trailer is mandatory in every commit body.
 ## Agent Response Contract (Non-Negotiable)
 
 You MUST end every response with a structured status block. The orchestrator uses this to
-decide the next action. No exceptions.
+decide the next action. No exceptions. See `agents/shared/status-schema.md` for the canonical field list.
 
 ```
 📋 AGENT STATUS

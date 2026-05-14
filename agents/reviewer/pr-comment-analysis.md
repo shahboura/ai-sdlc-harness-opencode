@@ -86,6 +86,8 @@ Set `Verdict:` in the AGENT STATUS block based on what the analysis covered:
 
 ## AGENT STATUS Block (Phase 7)
 
+See `agents/shared/status-schema.md` for the canonical field list across reviewer modes.
+
 ```
 📋 AGENT STATUS
 - Agent: reviewer

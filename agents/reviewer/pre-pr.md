@@ -172,6 +172,8 @@ Ready-to-use PR/MR body. The orchestrator and human may edit before use.
 
 ## AGENT STATUS Block (Phase 6)
 
+See `agents/shared/status-schema.md` for the canonical field list across reviewer modes.
+
 ```
 📋 AGENT STATUS
 - Agent: reviewer

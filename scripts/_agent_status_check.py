@@ -4,19 +4,22 @@ properly-shaped `📋 AGENT STATUS` block.
 
 Reads the hook payload file path from argv[1].
 
-Tightening vs. the previous implementation:
-- No `/tmp/agent-status-debug.json` write.
-- Presence check upgraded from "phrase appears anywhere" to "block appears
-  AND contains a non-empty `Outcome:` or `Verdict:` field". Blocks where
-  the agent only typed the literal phrase fall through.
-- The "near the end" tail window scales with response length —
-  `min(_TAIL_LINES_MAX, max(_TAIL_LINES_MIN, ceil(line_count / 4)))`.
-  A fixed 50-line window meant a 10-line response could "pass" with the
-  block on line 2; under the scaled window the block must sit in the
-  final quarter (with sane floors and ceilings).
+Schema: `agents/shared/status-schema.md`. This hook enforces the universal
+floor only. Mode-specific field enforcement lives in
+`tests/skills/status-schema.test.sh` (doc-grep regression on every agent's
+status-block example) — the hook does not try to reproduce that logic
+because it cannot reliably distinguish modes from one block at runtime.
 
-Fail policy: fail-CLOSED when a response was extracted but lacks the block;
-fail-OPEN when no response text can be located in the payload (logs a
+Universal floor (enforced):
+  - `📋 AGENT STATUS` phrase appears in the response's final tail window.
+  - The block contains `Agent: <recognized name>` (planner | developer |
+    tester | reviewer).
+  - The block contains one of `Outcome:` or `Verdict:` with a **non-empty**
+    value.
+  - The block contains `Next action:` with a non-empty value.
+
+Fail policy: fail-CLOSED when a response was extracted but the floor isn't
+met; fail-OPEN when no response text can be located in the payload (logs a
 warning so the gap is investigatable).
 
 Exit 0 = allow, Exit 2 = block.
@@ -24,17 +27,19 @@ Exit 0 = allow, Exit 2 = block.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import Any
 
 
 _REQUIRED_PHRASE = "📋 AGENT STATUS"
-_FIELDS_THAT_PROVE_BLOCK_IS_REAL = ("Outcome:", "Verdict:")
-# The tail window scales with response length: at least 5 lines so a tiny
-# response where the entire body IS the status block passes, at most 50 so
-# very long responses don't get a slack window. Between the bounds it tracks
-# the last ~quarter of the response.
-_TAIL_LINES_MIN = 5
+_KNOWN_AGENTS = ("planner", "developer", "tester", "reviewer")
+
+# The tail window scales with response length: at least 10 lines so a typical
+# status block (header + ~8 fields + short prose preamble) fits in a short
+# response, at most 50 so very long responses don't get a slack window.
+# Between the bounds it tracks the last ~quarter of the response.
+_TAIL_LINES_MIN = 10
 _TAIL_LINES_MAX = 50
 
 
@@ -77,6 +82,28 @@ def _extract_response(payload: dict) -> str:
     return ""
 
 
+def _field_value(block: str, field: str) -> str | None:
+    """Extract a `<field>: <value>` from the block (multiline-safe).
+
+    Returns the trimmed value, or None if the field is absent. An empty
+    value (`field:` with nothing after the colon) returns "" — callers
+    can distinguish missing vs empty by checking `is None` vs falsy.
+
+    Uses `[ \t]*` (not `\s*`) for the whitespace classes so the match
+    cannot cross a newline. With `\s*` and `re.MULTILINE`, an empty
+    `Outcome:` would swallow the following line's value because `\s*`
+    matched the newline.
+    """
+    pattern = re.compile(
+        rf"^[ \t\-*]*{re.escape(field)}:[ \t]*([^\n]*)",
+        re.MULTILINE,
+    )
+    m = pattern.search(block)
+    if m is None:
+        return None
+    return m.group(1).rstrip()
+
+
 def _validate(response: str) -> tuple[bool, str]:
     """Return (ok, reason). reason is empty when ok=True."""
     if _REQUIRED_PHRASE not in response:
@@ -95,11 +122,41 @@ def _validate(response: str) -> tuple[bool, str]:
 
     block_start = response.rfind(_REQUIRED_PHRASE)
     block = response[block_start:]
-    if not any(field in block for field in _FIELDS_THAT_PROVE_BLOCK_IS_REAL):
+
+    # `Agent:` with a recognized name.
+    agent_val = _field_value(block, "Agent")
+    if agent_val is None:
+        return False, 'the block has no `Agent:` field. Add one of: planner | developer | tester | reviewer.'
+    if agent_val.strip() not in _KNOWN_AGENTS:
         return (
             False,
-            f'the "{_REQUIRED_PHRASE}" header is present but the block has '
-            f"no Outcome: or Verdict: field. Add at least one of those.",
+            f'`Agent:` value `{agent_val.strip() or "(empty)"}` is not recognized. '
+            f'Expected one of: {" | ".join(_KNOWN_AGENTS)}.',
+        )
+
+    # Outcome OR Verdict with a non-empty value.
+    outcome_val = _field_value(block, "Outcome")
+    verdict_val = _field_value(block, "Verdict")
+    has_outcome = outcome_val is not None and outcome_val.strip() != ""
+    has_verdict = verdict_val is not None and verdict_val.strip() != ""
+    if not (has_outcome or has_verdict):
+        # Distinguish "field absent" from "field present but empty" so the
+        # error message is precise.
+        outcome_state = "absent" if outcome_val is None else "empty"
+        verdict_state = "absent" if verdict_val is None else "empty"
+        return (
+            False,
+            f'the block needs at least one of `Outcome:` / `Verdict:` with a '
+            f'non-empty value. Currently: Outcome={outcome_state}, Verdict={verdict_state}.',
+        )
+
+    # Next action with a non-empty value.
+    next_action_val = _field_value(block, "Next action")
+    if next_action_val is None or next_action_val.strip() == "":
+        return (
+            False,
+            'the block needs a `Next action:` field with a non-empty value '
+            "(the orchestrator's decision matrix routes on this).",
         )
 
     return True, ""
@@ -137,8 +194,10 @@ def main() -> int:
     print(
         'Every subagent must end its response with a block of the form:\n'
         "    📋 AGENT STATUS\n"
-        "    Outcome: SUCCESS | PARTIAL | FAILED | BLOCKED\n"
-        "    (additional fields per the agent's contract)\n",
+        "    - Agent: planner | developer | tester | reviewer\n"
+        "    - Outcome: SUCCESS | PARTIAL | FAILED | BLOCKED   (or Verdict: for reviewers)\n"
+        "    - Next action: <one-line description>\n"
+        "    (additional fields per agents/shared/status-schema.md)\n",
         file=sys.stderr,
     )
     return 2

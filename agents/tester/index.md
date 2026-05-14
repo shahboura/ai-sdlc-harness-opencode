@@ -93,7 +93,7 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
    Co-Authored-By: Claude Code <noreply@anthropic.com>
    ```
    Do NOT commit production code. Do NOT update the task tracker.
-7. Report `test_commit` hash and the list of red tests in your AGENT STATUS.
+7. Report the `Commit:` hash and the list of red tests in your AGENT STATUS.
 
 ### auto-harden mode
 
@@ -163,7 +163,7 @@ Before every `git commit` of test code, run the `format_command` from `.claude/c
 
 ## Agent Response Contract (Non-Negotiable)
 
-You MUST end every response with a structured status block. No exceptions.
+You MUST end every response with a structured status block. No exceptions. See `agents/shared/status-schema.md` for the canonical field list. Both modes use `Commit:` — the legacy `test_commit:` name is no longer accepted.
 
 ### auto-tdd mode status block:
 
@@ -180,7 +180,7 @@ You MUST end every response with a structured status block. No exceptions.
 - Outcome: <SUCCESS | PARTIAL | FAILED | BLOCKED>
 - Worktree: <path from WORKTREE DETAILS, or "not used (direct branch)" if worktree_failed: true>
 - Worktree branch: <branch from WORKTREE DETAILS, or "n/a" if worktree_failed: true>
-- test_commit: <hash, or "none">
+- Commit: <hash, or "none">
 - Red tests: <list of test names that are failing as expected>
 - Blockers: <description, or "none">
 - Next action: <"ready for developer" | "needs retry" | "escalate to human">
@@ -198,6 +198,8 @@ You MUST end every response with a structured status block. No exceptions.
 - Repo path: <local repo path>
 - Language: <language from LANGUAGE CONTEXT>
 - Outcome: <SUCCESS | PARTIAL | FAILED | BLOCKED>
+- Worktree: <path from WORKTREE DETAILS, or "not used (direct branch)" if worktree_failed: true>
+- Worktree branch: <branch from WORKTREE DETAILS, or "n/a" if worktree_failed: true>
 - Tests written: <count of NEW tests added in this phase>
 - Tests passing: <count> / <total>
 - Coverage: <percentage>%

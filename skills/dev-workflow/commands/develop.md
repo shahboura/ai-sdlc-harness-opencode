@@ -62,7 +62,7 @@ Each lane tracks:
 - `active` — the currently running agent (tester, developer, or reviewer), if any
 - `phase` — `idle` | `testing` | `developing` | `reviewing`
 - `worktree` / `worktree_branch` — shared worktree for the current task (created by tester or developer)
-- `test_commit` — commit hash from the Tester AGENT STATUS (failing tests)
+- `test_commit` — commit hash extracted from the Tester's `Commit:` field (failing tests). Internal lane-state variable name; the source field on the block is `Commit:` per `agents/shared/status-schema.md`.
 - `impl_commit` — commit hash from the Developer AGENT STATUS (passing implementation)
 
 ### Main Loop
@@ -157,7 +157,7 @@ Launch **@tester** with `run_in_background: true`, `name: "tester-<repo-name>"`,
 
       Co-Authored-By: Claude Code <noreply@anthropic.com>
       ```
-   4. Report `test_commit` hash and the list of red tests in AGENT STATUS.
+   4. Report `Commit:` hash and the list of red tests in AGENT STATUS.
    ```
 
 Mark lane as `phase: "testing"`.
@@ -193,7 +193,7 @@ Parse the `📋 AGENT STATUS` block from the tester.
 
 **If `Outcome: SUCCESS`:**
 
-1. Extract `Worktree`, `Worktree branch`, `test_commit`, `Red tests` from Tester AGENT STATUS.
+1. Extract `Worktree`, `Worktree branch`, `Commit` (Tester's), `Red tests` from Tester AGENT STATUS. Cache the commit hash as `test_commit` in lane state.
 2. Record `Test Written` in Task Metrics: `date -u +"%Y-%m-%d %H:%M UTC"`.
 3. Launch **@developer** in the **SAME worktree** with `run_in_background: true`, `name: "developer-<repo-name>"`, and `mode: "auto"`:
 
@@ -205,7 +205,7 @@ Parse the `📋 AGENT STATUS` block from the tester.
 
    [Include LANGUAGE_CTX — omit test-cmd]
    [Include WORKTREE_CTX, plus these additional fields:]
-   - Tester commit: <test_commit from Tester AGENT STATUS>
+   - Tester commit: <Commit from Tester AGENT STATUS (cached as test_commit in lane state)>
    - Red tests to turn green: <Red tests list from Tester AGENT STATUS>
    [Include CONTRACTS_CTX if multi-repo]
 

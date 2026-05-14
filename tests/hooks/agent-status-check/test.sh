@@ -28,38 +28,57 @@ print(json.dumps({
 " "$response"
 }
 
+# A canonical well-formed block that satisfies the universal floor (Agent +
+# Outcome|Verdict + Next action). Reused across happy-path tests.
+_well_formed_developer_block='Some prose.
+
+📋 AGENT STATUS
+- Agent: developer
+- Phase: 3
+- Story: #123
+- Outcome: SUCCESS
+- Commit: abc
+- Next action: ready for review
+'
+
+_well_formed_reviewer_block='Review done.
+
+📋 AGENT STATUS
+- Agent: reviewer
+- Phase: 3
+- Story: #123
+- Verdict: APPROVED
+- Next action: orchestrator: merge and proceed
+'
+
 # ── Passes ──────────────────────────────────────────────────────────────────
 
-test_allow_status_block_with_outcome() {
-    local resp='Some prose.
-
-📋 AGENT STATUS
-Outcome: SUCCESS
-Repo: x
-Commit: abc
-'
-    assert_hook_allows "$HOOK" "$(mk_subagent_payload_response "$resp")"
+test_allow_well_formed_developer_block() {
+    assert_hook_allows "$HOOK" "$(mk_subagent_payload_response "$_well_formed_developer_block")"
 }
 
-test_allow_status_block_with_verdict() {
-    local resp='Review done.
-
-📋 AGENT STATUS
-Verdict: APPROVED
-'
-    assert_hook_allows "$HOOK" "$(mk_subagent_payload_response "$resp")"
+test_allow_well_formed_reviewer_block() {
+    assert_hook_allows "$HOOK" "$(mk_subagent_payload_response "$_well_formed_reviewer_block")"
 }
 
 test_allow_status_block_from_messages_shape() {
-    local resp='Final response.
-
-📋 AGENT STATUS
-Outcome: SUCCESS
-'
-    assert_hook_allows "$HOOK" "$(mk_subagent_payload_messages "$resp")"
+    assert_hook_allows "$HOOK" "$(mk_subagent_payload_messages "$_well_formed_developer_block")"
 }
 
-# ── Blocks ──────────────────────────────────────────────────────────────────
+test_allow_when_outcome_and_verdict_both_present() {
+    # Both fields valid is fine — the hook only requires at least one.
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: reviewer
+- Outcome: SUCCESS
+- Verdict: APPROVED
+- Next action: orchestrator: merge and proceed
+'
+    assert_hook_allows "$HOOK" "$(mk_subagent_payload_response "$resp")"
+}
+
+# ── Blocks: structural ─────────────────────────────────────────────────────
 
 test_block_no_status_block_at_all() {
     local resp='Just some prose, no status block to be found.'
@@ -68,26 +87,92 @@ test_block_no_status_block_at_all() {
         "does not contain the literal phrase"
 }
 
-test_block_status_block_without_outcome_or_verdict() {
-    # The OLD hook would pass this — phrase present, but no required fields.
-    local resp='Some prose.
-
-📋 AGENT STATUS
-(empty block, nothing here)
-'
-    assert_hook_blocks "$HOOK" \
-        "$(mk_subagent_payload_response "$resp")" \
-        "no Outcome: or Verdict: field"
-}
-
 test_block_status_block_mid_response_not_near_end() {
-    # Phrase appears, but buried in prose. The OLD hook accepted this.
+    # Phrase appears, but buried in prose.
     local prose
     prose="$(printf 'mid-prose mention of 📋 AGENT STATUS in passing\nOutcome: SUCCESS\n'
              for i in $(seq 1 60); do printf 'more prose line %d\n' "$i"; done)"
     assert_hook_blocks "$HOOK" \
         "$(mk_subagent_payload_response "$prose")" \
         "not in the response's final"
+}
+
+# ── Blocks: universal-floor field checks ───────────────────────────────────
+
+test_block_missing_agent_field() {
+    local resp='Output.
+
+📋 AGENT STATUS
+- Outcome: SUCCESS
+- Next action: ready for review
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "no \`Agent:\` field"
+}
+
+test_block_unrecognized_agent_value() {
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: orchestrator
+- Outcome: SUCCESS
+- Next action: ready for review
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "not recognized"
+}
+
+test_block_outcome_and_verdict_both_absent() {
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: developer
+- Next action: ready for review
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "Outcome:\` / \`Verdict:\` with a"
+}
+
+test_block_outcome_present_but_empty() {
+    # Outcome: with no value — must surface as "empty", not "absent".
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: developer
+- Outcome:
+- Next action: ready for review
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "Outcome=empty"
+}
+
+test_block_next_action_missing() {
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: developer
+- Outcome: SUCCESS
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "Next action:"
+}
+
+test_block_next_action_present_but_empty() {
+    local resp='Output.
+
+📋 AGENT STATUS
+- Agent: developer
+- Outcome: SUCCESS
+- Next action:
+'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_subagent_payload_response "$resp")" \
+        "Next action:"
 }
 
 # ── Fail-open paths ────────────────────────────────────────────────────────
@@ -115,13 +200,8 @@ test_allow_outside_workspace() {
 # ── No /tmp debug artifact ──────────────────────────────────────────────────
 
 test_no_tmp_debug_file_written() {
-    # The OLD hook wrote /tmp/agent-status-debug.json on every invocation.
-    # Make sure the rewrite doesn't.
     rm -f /tmp/agent-status-debug.json
-    local resp='📋 AGENT STATUS
-Outcome: SUCCESS
-'
-    printf '%s' "$(mk_subagent_payload_response "$resp")" | (cd "$FAKE_WORKSPACE" && "$HOOK") >/dev/null 2>&1
+    printf '%s' "$(mk_subagent_payload_response "$_well_formed_developer_block")" | (cd "$FAKE_WORKSPACE" && "$HOOK") >/dev/null 2>&1
     if [ -f /tmp/agent-status-debug.json ]; then
         _fail "/tmp/agent-status-debug.json should not be written by the rewrite"
         rm -f /tmp/agent-status-debug.json

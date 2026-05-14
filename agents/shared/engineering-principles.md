@@ -1,14 +1,12 @@
----
-name: engineering-principles
-description: >
-  [HARNESS INTERNAL — do not invoke directly] Shared engineering principles reference
-  (SOLID, DRY, YAGNI) read by the reviewer and developer agents inside the
-  ai-sdlc-harness workflow. Never invoke as a standalone agent.
-tools: Read
-model: inherit
----
-
 # Universal Engineering Principles
+
+<!--
+Reference document, not an invocable agent. The Developer and Reviewer agents
+`Read` this as a regular file (see `agents/developer/index.md:118` and
+`agents/reviewer/index.md:178`). Agent-style frontmatter was removed because
+it misleadingly suggested this could be `@`-invoked.
+-->
+
 
 These principles apply to all code, in all languages, in every task. The Developer must
 follow them. The Reviewer must flag violations as blocking issues.
