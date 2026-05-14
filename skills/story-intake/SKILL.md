@@ -24,7 +24,11 @@ for the human user.
   - Jira: issue key (e.g., `PROJ-123`)
   - GitLab: issue IID (e.g., `123`)
   - GitHub: issue number (e.g., `123`)
+  - Zoho: mail group task ID (e.g., `1234567890`)
+  - local-markdown: file path to a `.md` story file
+    (e.g., `./stories/auth-story.md`, absolute or relative to cwd)
 - **Second argument** (optional): Project identifier. Provider-specific default from provider-config.md.
+  Not applicable for `local-markdown` (the file path is fully qualifying).
 
 Parse `$ARGUMENTS` to extract these values.
 
@@ -64,6 +68,17 @@ mcp__gitlab__get_issue(projectId=$PROJECT, issueIid=$ID)
 mcp__github__get_issue(owner=$OWNER, repo=$REPO, issueNumber=$ID)
 ```
 
+**local-markdown example:**
+```
+Read(file_path=$ID)   # $ID is the file path passed as the first argument
+```
+
+For `local-markdown`, the work item ID is the file path itself (e.g.,
+`./stories/auth-story.md`). Validate the file exists before reading; if it
+does not, stop and inform the user — do not create it. See
+`skills/providers/local-markdown/work-items.md` for the full adapter,
+including how H2 sections are mapped to story fields.
+
 ### 2. Extract and Display
 
 Using the field mappings from the provider adapter, extract and present:
@@ -83,6 +98,10 @@ Using the field mappings from the provider adapter, extract and present:
 - **GitLab / GitHub**: Description is markdown. AC is typically embedded as a task list
   section in the description body — parse the `## Acceptance Criteria` section or
   equivalent pattern documented in provider-config.md.
+- **local-markdown**: Description is markdown — no conversion needed. Title is the
+  first H1; Description is the prose before the first H2; AC, Out of Scope, Open
+  Questions, and Technical Notes come from their respective `## ...` sections.
+  Unstructured files (no headings) are treated as description-only.
 
 ### 3. Analyse for Gaps
 
@@ -105,7 +124,7 @@ If ANY gaps found, present numbered clarifying questions to the human user.
 
 **Title**: ...
 **Story/Issue ID**: $ID
-**Provider**: <ado | jira | gitlab | github>
+**Provider**: <ado | jira | gitlab | github | zoho | local-markdown>
 **Sprint/Milestone**: ...
 
 ### Acceptance Criteria (Validated)

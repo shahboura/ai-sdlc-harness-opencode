@@ -9,9 +9,11 @@ Tightening vs. the previous implementation:
 - Presence check upgraded from "phrase appears anywhere" to "block appears
   AND contains a non-empty `Outcome:` or `Verdict:` field". Blocks where
   the agent only typed the literal phrase fall through.
-- Block must occur within the last 50 lines of the response (rough
-  "near the end" check). The phrase mentioned in mid-response prose
-  no longer satisfies the gate.
+- The "near the end" tail window scales with response length —
+  `min(_TAIL_LINES_MAX, max(_TAIL_LINES_MIN, ceil(line_count / 4)))`.
+  A fixed 50-line window meant a 10-line response could "pass" with the
+  block on line 2; under the scaled window the block must sit in the
+  final quarter (with sane floors and ceilings).
 
 Fail policy: fail-CLOSED when a response was extracted but lacks the block;
 fail-OPEN when no response text can be located in the payload (logs a
@@ -28,7 +30,16 @@ from typing import Any
 
 _REQUIRED_PHRASE = "📋 AGENT STATUS"
 _FIELDS_THAT_PROVE_BLOCK_IS_REAL = ("Outcome:", "Verdict:")
-_TAIL_LINES = 50
+# The tail window scales with response length: at least 5 lines so a tiny
+# response where the entire body IS the status block passes, at most 50 so
+# very long responses don't get a slack window. Between the bounds it tracks
+# the last ~quarter of the response.
+_TAIL_LINES_MIN = 5
+_TAIL_LINES_MAX = 50
+
+
+def _tail_window(line_count: int) -> int:
+    return min(_TAIL_LINES_MAX, max(_TAIL_LINES_MIN, line_count // 4))
 
 
 def _extract_text(content: Any) -> str:
@@ -71,12 +82,15 @@ def _validate(response: str) -> tuple[bool, str]:
     if _REQUIRED_PHRASE not in response:
         return False, f'response does not contain the literal phrase "{_REQUIRED_PHRASE}"'
 
-    tail = "\n".join(response.splitlines()[-_TAIL_LINES:])
+    lines = response.splitlines()
+    tail_size = _tail_window(len(lines))
+    tail = "\n".join(lines[-tail_size:])
     if _REQUIRED_PHRASE not in tail:
         return (
             False,
             f'the "{_REQUIRED_PHRASE}" phrase appears, but not in the response\'s '
-            f'final {_TAIL_LINES} lines — the block must end the response.',
+            f'final {tail_size} lines (of {len(lines)} total) — the block must end '
+            f'the response.',
         )
 
     block_start = response.rfind(_REQUIRED_PHRASE)
