@@ -107,6 +107,8 @@ The workflow supports multiple providers via adapter skills in `skills/providers
 
 Provider selection happens during `/init-workspace` and is stored in `.claude/context/provider-config.md`.
 
+**Phase 7 (PR review-response) support** is declared separately in each git provider's `pr-comments.md` adapter. GitHub ships with full Phase 7 support today (list / reply on unresolved review threads via `gh api`). The other git providers — ADO, GitLab, gh-cli, glab-cli — do not yet ship `pr-comments.md`; running `/dev-workflow review-response` against them currently surfaces an explicit setup gap rather than proceeding. See `skills/providers/shared/capabilities.md` for the canonical capability list.
+
 ## Worktree Fallback (Windows)
 
 Git worktree creation may fail with `error: could not lock config file .git/config: File exists`. If this happens, the Developer reports `Worktree: failed` in its status, and the orchestrator re-invokes without worktree isolation.

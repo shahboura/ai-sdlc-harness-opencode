@@ -40,8 +40,9 @@ run_integration_dir() {
     done
 }
 
-run_dir_aggregator "hooks"  "$DIR/hooks/run.sh"
-run_dir_aggregator "skills" "$DIR/skills/run.sh"
+run_dir_aggregator "hooks"    "$DIR/hooks/run.sh"
+run_dir_aggregator "skills"   "$DIR/skills/run.sh"
+run_dir_aggregator "adapters" "$DIR/adapters/run.sh"
 run_integration_dir
 
 printf '\n=====================================\n'

@@ -108,6 +108,20 @@ gh pr comment <PR-NUMBER> --repo owner/repo --body "Related PRs: ..."
 
 **If work item provider is Jira:** See `skills/providers/shared/pr-conventions.md` — [When Work Item Provider is Jira](../shared/pr-conventions.md#when-work-item-provider-is-jira).
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `pr.create` | ✅ | `mcp__github__create_pull_request` or `gh pr create` |
+| `pr.find_for_branch` | ✅ | `gh pr list --head <branch> --state open --json number,url --limit 1` |
+| `pr.link_work_item` | 🟡 | Emulated — `Closes #N` keyword in PR body auto-links and auto-closes the issue |
+| `pr.set_draft` | ✅ | `--draft` flag on `gh pr create`; `draft: true` on the MCP tool |
+
+PR review-comment capabilities (`pr.list_review_comments`, `pr.reply_to_review_comment`)
+are declared separately in [`pr-comments.md`](./pr-comments.md).
+
 ## Terminology
 
 - **Type**: Pull Request (PR)

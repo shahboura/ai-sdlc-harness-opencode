@@ -40,14 +40,23 @@ Also locate the plan file at `ai/plans/*<STORY-ID>*`.
 ### Step 2 — Fetch PR Comments (per repo)
 
 For each affected repo, determine the git provider from `provider-config.md` and read the
-corresponding git adapter at `skills/providers/<git-provider>/pull-requests.md` to fetch
-open review comments.
+corresponding **PR review comments adapter** at
+`skills/providers/<git-provider>/pr-comments.md`. This is distinct from
+`pull-requests.md` (which covers PR creation) — the comments adapter declares the
+`pr.find_for_branch`, `pr.list_review_comments`, and `pr.reply_to_review_comment`
+capabilities used in this phase.
+
+If `pr-comments.md` does not exist for the configured provider, surface this to the
+human and end the phase — Phase 7 cannot proceed without the primitives. (See
+`skills/providers/shared/capabilities.md` for the canonical capability list and which
+providers declare support.)
 
 Use the adapter to:
-1. Look up the open PR/MR for the repo's feature branch.
-2. Fetch all review threads / comment threads.
+1. Look up the open PR/MR for the repo's feature branch (`pr.find_for_branch`).
+2. Fetch all review threads / comment threads (`pr.list_review_comments`).
 3. Filter to **unresolved threads only** — skip automated bot comments, CI check summaries,
-   and already-resolved threads.
+   and already-resolved threads. The adapter declares its own bot-filter starter list;
+   apply it client-side.
 
 Collect for each unresolved comment:
 - A sequential ID: `[PC-<n>]` (globally numbered across all repos, starting at 1)
@@ -113,6 +122,18 @@ together, clearly separated by repo, with a merged summary count at the top:
 ```
 Total across all repos — Valid: N | Invalid: N | Partial: N
 ```
+
+**Verdict handling per repo report:**
+
+Parse the `Verdict:` and `Unclassified:` lines from each sub-report's AGENT STATUS block.
+
+- `Verdict: ANALYSIS_COMPLETE` — no special action; include the report as-is in the merged
+  output.
+- `Verdict: ANALYSIS_PARTIAL` — prepend an `## Unclassified Comments` block at the top of
+  the merged output naming each repo with a non-zero `Unclassified:` count. The human at
+  GATE #4 must decide whether to re-fetch, skip, or accept the partial classification.
+- `Verdict: PLAN_NOT_FOUND` — this is `Outcome: FAILED`. Surface as a hard error per
+  `orchestrator-rules.md` error handling. Do not proceed to Step 5 — escalate to the human.
 
 ### Step 5 — Present PR Comment Analysis Report to Human (GATE #4)
 
@@ -289,15 +310,15 @@ Would you like me to reply to the addressed PR comment threads with commit refer
 
 **If YES:** Read the tracker's Notes column for every task whose Notes contain `PR-comment:`.
 Extract the `thread_id=<value>` stored there by the Planner in Step 7. For each addressed
-`[PC-<n>]` comment, use the git provider adapter to post a reply on the original thread:
+`[PC-<n>]` comment, use the PR comments adapter to post a reply on the original thread:
 
 ```
 Addressed in commit <squash-merge-hash>: <one-sentence summary of what was changed>
 ```
 
-Route through the provider adapter in `skills/providers/<git-provider>/pull-requests.md`.
-The thread IDs come from the tracker — not from session memory — so this step is safe to
-run even after a session interruption.
+Route through `skills/providers/<git-provider>/pr-comments.md` (the
+`pr.reply_to_review_comment` capability). The thread IDs come from the tracker — not from
+session memory — so this step is safe to run even after a session interruption.
 
 ---
 
