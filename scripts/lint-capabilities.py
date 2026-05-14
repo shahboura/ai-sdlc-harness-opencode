@@ -50,18 +50,28 @@ REQUIRED_CAPS = {
 }
 
 # Map an adapter file (relative to a provider directory) to the capability set
-# it must declare. A provider entry may omit a file when it does not apply —
-# e.g. local-markdown has no pull-requests.md. The lint only checks the files
-# the provider entry lists.
+# it must declare. Note that GitLab uses `merge-requests.md` instead of
+# `pull-requests.md` (mirroring its MR terminology) — the lint accepts either
+# filename for the PR capability set via the per-provider scope below.
+# `pr-comments.md` is the canonical name for Phase 7 primitives across all
+# providers regardless of PR/MR terminology.
 ADAPTER_SCOPE = {
     "work-items.md": WORK_ITEM_CAPS,
     "pull-requests.md": PR_CAPS,
+    "merge-requests.md": PR_CAPS,
     "pr-comments.md": PR_COMMENT_CAPS,
 }
 
-# Allow-list of providers under capability lint. Extend as adapters are migrated.
+# Allow-list of providers under capability lint. Per-provider scope lists the
+# adapter files we expect to find for that provider; missing files are flagged
+# by the lint. Providers absent from this map are not yet swept and the lint
+# does not enforce declarations on them.
 ALLOW_LIST = {
-    "github": ["work-items.md", "pull-requests.md", "pr-comments.md"],
+    "ado":      ["work-items.md", "pull-requests.md",  "pr-comments.md"],
+    "github":   ["work-items.md", "pull-requests.md",  "pr-comments.md"],
+    "gh-cli":   [                 "pull-requests.md",  "pr-comments.md"],
+    "gitlab":   ["work-items.md", "merge-requests.md", "pr-comments.md"],
+    "glab-cli": [                 "merge-requests.md", "pr-comments.md"],
 }
 
 STATUS_MARKERS = ("✅", "🟡", "❌")

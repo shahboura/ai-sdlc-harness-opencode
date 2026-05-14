@@ -132,6 +132,20 @@ Closes mygroup/myproject#123
 
 No separate API call is needed — GitLab handles linking and auto-closing natively.
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `pr.create` | ✅ | `glab mr create` |
+| `pr.find_for_branch` | ✅ | `glab mr list --source-branch <branch> --state opened --output json --per-page 1` |
+| `pr.link_work_item` | 🟡 | Emulated — `Closes #IID` keyword in MR description auto-links and auto-closes the issue |
+| `pr.set_draft` | ✅ | `--draft` flag (or `Draft:` title prefix) |
+
+PR review-comment capabilities (`pr.list_review_comments`, `pr.reply_to_review_comment`)
+are declared separately in [`pr-comments.md`](./pr-comments.md).
+
 ## Terminology
 
 - **Type**: Merge Request (MR)

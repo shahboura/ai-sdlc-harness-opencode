@@ -71,13 +71,24 @@ Every adapter `## Capabilities` section uses a three-column table:
 
 A capability **not listed** in the adapter table is treated as `❌`.
 
-## Adapter Sweep Status (2026-05)
+## Adapter Sweep Status
 
-The capability declarations and `pr-comments.md` per-adapter files are being rolled out
-provider-by-provider. The first reference adapter is **GitHub** (under
-`skills/providers/github/`). The remaining git providers — ADO, GitLab, gh-cli, glab-cli —
-do not yet declare capabilities; their Phase 7 support is **unknown** until they are swept.
+Every git provider adapter declares the canonical capability list and ships a
+`pr-comments.md` file with the Phase 7 primitives. The sweep covers:
 
-The `scripts/lint-capabilities.py` lint script enforces declaration presence on the swept
-adapters. Until the sweep is complete, the lint is scoped to GitHub only (see the script
-for the current allow-list).
+| Provider | Work item | PR/MR | Phase 7 (`pr-comments.md`) |
+|----------|-----------|-------|-----------------------------|
+| `ado` | ✅ | ✅ `pull-requests.md` | ✅ — REST via `curl` (MCP threads 🟡) |
+| `github` | ✅ | ✅ `pull-requests.md` | ✅ — `gh api graphql` (MCP review-threads ❌) |
+| `gh-cli` | — (no work-item tracker) | ✅ `pull-requests.md` | ✅ — `gh api graphql` |
+| `gitlab` | ✅ | ✅ `merge-requests.md` | ✅ — REST via `curl` (MCP discussions 🟡) |
+| `glab-cli` | — (no work-item tracker) | ✅ `merge-requests.md` | ✅ — `glab api` |
+
+`jira`, `zoho`, and `local-markdown` are work-item providers only — Phase 7 routes through
+the configured git provider regardless of the work-item provider. They have no
+`pr-comments.md` and the lint does not expect one.
+
+`scripts/lint-capabilities.py` enforces declaration presence across the swept set. Adding
+a new provider involves: (1) the adapter file(s) under `skills/providers/<name>/`, each
+with a `## Capabilities` section; (2) an entry in the lint's `ALLOW_LIST`; (3) a
+test-suite assertion that covers it.

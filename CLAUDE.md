@@ -107,7 +107,7 @@ The workflow supports multiple providers via adapter skills in `skills/providers
 
 Provider selection happens during `/init-workspace` and is stored in `.claude/context/provider-config.md`.
 
-**Phase 7 (PR review-response) support** is declared separately in each git provider's `pr-comments.md` adapter. GitHub ships with full Phase 7 support today (list / reply on unresolved review threads via `gh api`). The other git providers — ADO, GitLab, gh-cli, glab-cli — do not yet ship `pr-comments.md`; running `/dev-workflow review-response` against them currently surfaces an explicit setup gap rather than proceeding. See `skills/providers/shared/capabilities.md` for the canonical capability list.
+**Phase 7 (PR review-response) support** is declared per git provider in `skills/providers/<git-provider>/pr-comments.md` and covers all five git providers: GitHub (`gh api graphql` for review threads, REST replies), gh-cli (same CLI primitives), GitLab (REST `/discussions` via `curl`), glab-cli (`glab api` discussions), and ADO (REST `/threads` via `curl`). MCP wrappers exist for some providers and are marked 🟡 in each adapter — verify the tool surface in your harness install before relying on them. See `skills/providers/shared/capabilities.md` for the canonical capability list and sweep status.
 
 ## Worktree Fallback (Windows)
 

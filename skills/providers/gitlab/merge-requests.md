@@ -76,6 +76,19 @@ Useful for adding cross-PR references in multi-repo stories.
 
 **If work item provider is Jira:** See `skills/providers/shared/pr-conventions.md` — [When Work Item Provider is Jira](../shared/pr-conventions.md#when-work-item-provider-is-jira).
 
+## Capabilities
+
+See `skills/providers/shared/capabilities.md` for the canonical list and declaration format.
+
+| Capability | Status | Notes |
+|------------|--------|-------|
+| `pr.create` | ✅ | `mcp__gitlab__create_merge_request` |
+| `pr.find_for_branch` | ✅ | REST `GET /merge_requests?source_branch=<branch>&state=opened` via `curl` |
+| `pr.link_work_item` | 🟡 | Emulated — `Closes #IID` keyword in MR description auto-links and auto-closes the issue |
+| `pr.set_draft` | ✅ | `draft: true` parameter on `create_merge_request` (or leading `Draft:` prefix in title) |
+
+PR review-comment capabilities (`pr.list_review_comments`, `pr.reply_to_review_comment`) are declared separately in [`pr-comments.md`](./pr-comments.md) — REST via `curl` is the canonical path; MCP discussion-list/reply tools may exist (🟡) but are version-dependent.
+
 ## Terminology
 
 - **Type**: Merge Request (MR)

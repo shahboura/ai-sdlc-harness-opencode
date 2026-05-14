@@ -31,6 +31,25 @@ else
     _fail 'lint exits 0 on real tree' "$out"
 fi
 
+# --- 1a. Every swept provider has its pr-comments.md file ------------------
+# Sanity check: catches a regression that drops one of the new adapter files.
+for provider in ado github gh-cli gitlab glab-cli; do
+    if [ -f "$REPO_ROOT/skills/providers/$provider/pr-comments.md" ]; then
+        _pass "$provider/pr-comments.md exists"
+    else
+        _fail "$provider/pr-comments.md exists" 'missing the Phase 7 adapter file'
+    fi
+done
+
+# --- 1b. GitLab adapters declare PR caps in merge-requests.md, not pull-requests.md
+for provider in gitlab glab-cli; do
+    if [ -f "$REPO_ROOT/skills/providers/$provider/merge-requests.md" ]; then
+        _pass "$provider uses merge-requests.md (GitLab MR terminology)"
+    else
+        _fail "$provider uses merge-requests.md" 'expected merge-requests.md, not pull-requests.md'
+    fi
+done
+
 # --- 2. Lint catches a missing `## Capabilities` heading -------------------
 TMP1=$(mktemp -d)
 trap 'rm -rf "$TMP1" "$TMP2"' EXIT
