@@ -92,11 +92,17 @@ Read `.claude/context/repos-metadata.md` and `.claude/context/repos-paths.md` to
 
 For each affected repo, build a version map of its direct dependencies:
 
-1. Read `key_dependencies` from `.claude/context/language-config.md` for the repo. If the field is absent or empty (workspace initialised before this feature, or unsupported manifest format), fall back to reading the repo's primary dependency manifest directly — identified by `project_root_markers` in `language-config.md`. Apply the same extraction rules as language-discovery Phase 2 (pom.xml, package.json, go.mod, pyproject.toml are supported; note unavailable if format is unsupported).
+1. Read `key_dependencies` from `.claude/context/language-config.md` for the repo. If the field is absent or empty:
+   - If the trailing comment is `# manifest unsupported`, the version map is deliberately empty for this repo (the manifest is out of scope per `language-discovery.md`). Hold an empty map; do not retry by reading the manifest yourself.
+   - Otherwise (the workspace was initialised before `key_dependencies` was added, or the value was wiped), fall back to reading the repo's primary dependency manifest directly — identified by `project_root_markers` in `language-config.md`. Apply the same extraction rules as language-discovery Phase 2 (pom.xml, package.json, go.mod, pyproject.toml are supported; for any other format, hold an empty map).
 
 2. Hold the version map in context for use in step 2. You will not write it to the plan; it informs annotations only.
 
-**Annotation rule (applied in step 2):** for every task whose Description prescribes a specific named method, type, or API on a library, append `[API: <lib> v<version>]` to that task's **Notes** column — e.g., `test-required: true · [API: some-library v2.3.0]`. This is the developer's prompt to verify the method signature against docs for that exact version before implementing. Omit the annotation only for tasks with no library API usage (pure config, dependency bumps, scaffolding).
+**Annotation rule (applied in step 2):** for every task whose Description prescribes a specific named method, type, or API on a library:
+
+- If the library appears in the version map with a concrete version, append `[API: <lib> v<version>]` to that task's **Notes** column — e.g., `test-required: true · [API: some-library v2.3.0]`. This is the developer's prompt to verify the method signature against docs for that exact version before implementing.
+- If the version map is empty (manifest unsupported / unreadable) **or** the library is not present in the map, **omit the annotation entirely**. Do not invent a placeholder like `v?`, `v0`, or `v(unknown)`; a guessed version is worse than no annotation because the Developer would still consult docs but with a wrong anchor.
+- Omit the annotation for tasks with no library API usage (pure config, dependency bumps, scaffolding).
 
 ### 2. Task Decomposition
 
