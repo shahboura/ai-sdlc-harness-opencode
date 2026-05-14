@@ -77,6 +77,18 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
    its dependencies **within the same repo** are ✅ Done. (Cross-repo dependencies do not
    exist — they are resolved via contracts defined in the plan.)
 
+   Dependencies are declared by the Planner as a `depends: T<n>[, T<n>...]` token in the
+   task row's **Notes** column (canonical format documented in
+   `skills/plan-generator/SKILL.md` → *Dependency notation*). To resolve:
+   - Read the candidate task's Notes cell.
+   - Match the regex `depends:\s*(T[A-Za-z0-9-]+(?:\s*,\s*T[A-Za-z0-9-]+)*)`.
+   - If matched, split the captured group on commas and trim whitespace — that is the
+     dependency list. Every listed Task ID must be ✅ Done in the **same repo** before this
+     task is eligible.
+   - If no `depends:` token is present, the task has no intra-repo dependencies.
+   - If the captured Task ID does not appear in this repo's tracker rows, treat it as a
+     planner error: leave the task in `pending`, surface to human, and do not advance the lane.
+
 2. **Update tracker**: T → 🔧 In Progress. Set `Started` in Task Metrics to the output of `date -u +"%Y-%m-%d %H:%M UTC"`.
 
 3. **Capture feature branch state** for the repo:
@@ -285,6 +297,21 @@ Parse the `📋 AGENT STATUS` block from the developer.
 
 **If `Outcome: BLOCKED`:**
 - Present blocker to human for resolution.
+- **Special case — `Next action: "escalate to human — spec judgement: test vs impl"`:**
+  the Developer detected that one or more **previously-green tests** broke as a side effect
+  of T(n)'s implementation. This is the cannot-self-resolve path defined in
+  `agents/developer/index.md` → *Broken Pre-Existing Tests*. The Developer cannot edit tests;
+  the Tester cannot decide whether the impl or the test is wrong. Surface the `Blockers`
+  list to the human verbatim and ask them to pick one branch:
+  - **(a) Impl is wrong** — re-invoke @developer in the SAME worktree with the broken tests
+    as focused fix instructions; tests stay untouched.
+  - **(b) Test needs updating** — invoke @tester in the SAME worktree with `mode: "auto-tdd"`,
+    pointing at the specific tests to update (note: scope is test-edit, not new test
+    authoring); after tester SUCCESS, re-invoke @developer to verify the worktree builds and
+    all tests are green, then resume the normal review path (Step 3 onwards).
+
+  Do NOT auto-route to either agent — wait for the human's selection. Do not advance the
+  lane while the question is open.
 
 > **Note:** The agent-side `Next action: "worktree failed — retry without isolation"`
 > branch from earlier versions is no longer reachable — the orchestrator creates

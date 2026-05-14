@@ -81,12 +81,18 @@ If the orchestrator's worktree-creation attempt failed twice, it inlines a **REP
    - Run the restore command if new dependencies are needed.
    - Ensure the **build passes with zero errors and zero warnings**.
    - For TDD tasks: ensure **ALL pre-existing tests pass** (turn red → green).
-5. **Self-review before committing** — run through this checklist. If any answer is "no," fix first:
+5. **Self-review before committing** — run through this checklist. If any answer is "no," fix it before committing:
    - **Completeness:** Did I fully implement everything in the task description?
    - **Quality:** Are names clear and accurate? Does code follow all language conventions?
    - **Discipline:** Did I avoid overbuilding (YAGNI)? Did I follow existing patterns?
    - **Correctness:** Does my implementation satisfy every acceptance criterion for this task?
    - **Tests untouched (TDD tasks):** Did I leave all Tester-authored test files unmodified?
+
+   **Self-review is a precondition for committing.** If any check still fails after your fix
+   attempts, you MUST NOT commit. Stop, set `Outcome: PARTIAL` in your status block, name the
+   failed check(s) in `Concerns`, and let the orchestrator re-invoke you with focused
+   instructions. The combination `Outcome: SUCCESS` + `Self-review: FAIL` is invalid — the
+   orchestrator treats it as `PARTIAL` and re-routes regardless of what you report.
 6. **Commit production code only** with proper message format:
    - TDD task: `#<STORY-ID> #<TASK-ID> impl: description of what changed`
    - Non-TDD task: `#<STORY-ID> #<TASK-ID>: description of what changed`
@@ -127,6 +133,32 @@ Use the build command from your LANGUAGE CONTEXT:
    with full build output and set Outcome to `FAILED`.
 
 **NEVER commit code that does not build.**
+
+## Broken Pre-Existing Tests (Cannot-Self-Resolve Path)
+
+If, while implementing T(n), you observe that one or more **previously-green tests** turn
+red — tests that were passing on the feature branch HEAD before your changes — you face a
+spec-level judgement you are not allowed to make alone:
+
+- The test may be **correct** and your implementation may have broken intended behaviour
+  → you must fix the implementation.
+- The test may be **stale** — the new task legitimately changes the behaviour it asserts
+  → only the Tester is permitted to edit the test file, and only with human direction.
+
+You cannot decide which case applies. Do **NOT** edit any test file to make a broken
+pre-existing test pass; that violates the test-ownership rule and may erase a real
+regression. Instead:
+
+1. Stop after the second build/test cycle confirms the breakage is real (not a flake).
+2. Do **NOT** commit. Set `Outcome: BLOCKED` in your status block.
+3. In `Blockers`, list each broken test as `<test-file>::<test-name> — was green on
+   <feature-branch> HEAD, now red after my changes`.
+4. In `Next action`, write `escalate to human — spec judgement: test vs impl`.
+
+The orchestrator will surface this to the human, who picks one branch:
+- **Impl is wrong** → orchestrator re-invokes you in the same worktree with a focused fix.
+- **Test needs updating** → orchestrator invokes the Tester in the same worktree to update
+  the test; once the Tester is done you may be re-invoked to verify.
 
 ## What You Do NOT Do
 
@@ -183,7 +215,7 @@ decide the next action. No exceptions.
 - Build attempts: <1 | 2 | 3>
 - Commit: <hash, or "none">
 - Files changed: <list of modified/created files>
-- Self-review: <PASS | FAIL — if FAIL, list which checks failed and what was fixed>
+- Self-review: <PASS | FAIL — if FAIL, list which checks failed; FAIL is only valid alongside Outcome ∈ {PARTIAL, BLOCKED, FAILED}, never SUCCESS, and means you did NOT commit>
 - Concerns: <description of doubts about correctness, or "none">
 - Blockers: <description, or "none">
 - Next action: <"ready for review" | "needs retry" | "escalate to human">

@@ -135,7 +135,9 @@ If the Phase 6 reviewer reports `Outcome: FAILED` (build/test broken, worktree m
 1. Look for `📋 AGENT STATUS` in the agent response.
 2. If the block is MISSING, the Stop hook will catch this and force the agent to add it. If after retry it's still missing, log a warning and proceed based on the agent's prose output.
 3. Extract the `Outcome` field first — it determines the branch.
-4. For Developer: also check `Repo`, `Repo path`, `Worktree`, `Worktree branch`, `Commit`, `Build result`, and `Build attempts`. If `Build attempts: 3` and `FAILED`, do NOT retry — escalate. The `Repo`, `Repo path`, and worktree fields are REQUIRED for the reviewer and merge steps. Use `Repo` to map the agent back to its lane.
+4. For Developer: also check `Repo`, `Repo path`, `Worktree`, `Worktree branch`, `Commit`, `Build result`, `Build attempts`, and `Self-review`. If `Build attempts: 3` and `FAILED`, do NOT retry — escalate. The `Repo`, `Repo path`, and worktree fields are REQUIRED for the reviewer and merge steps. Use `Repo` to map the agent back to its lane.
+
+   **Self-review enforcement:** the combination `Outcome: SUCCESS` + `Self-review: FAIL` is invalid by definition (self-review is a commit precondition). If you observe it, override the Outcome to `PARTIAL` and re-route via the standard `PARTIAL` handler — re-invoke the Developer with the failed self-review check(s) as focused instructions. Do not advance the lane to review while self-review is failing.
 5. For Reviewer: check `Verdict`. If `CHANGES_REQUESTED`, extract structured comments from the `Review comments` field and route them per the three-prefix model in *Structured Review Comments* below — `[R<n>]` to the Developer, `[T<n>]` to the Tester, `[S<n>]` by file path (production → Developer, test → Tester). The orchestrator (not the reviewer) updates the task tracker.
 6. For Tester: check `Tests passing` and `Coverage`. If `Coverage` < 90% after `Test attempts: 3`, escalate.
 
@@ -198,3 +200,17 @@ If an agent turn ends unexpectedly (API error, timeout), the `StopFailure` hook 
 3. Injects resume instructions into the next turn
 
 The orchestrator should read the recovery context and resume from the exact point of failure.
+
+### Worktree Reconciliation on Resume
+
+Mid-task interruptions (API error, user abort, session timeout) leave worktrees on disk that may or may not be load-bearing for the resume. The orchestrator MUST reconcile them before resuming work — and at the start of any new Phase 3 invocation for an existing tracker — using the procedure injected by `stop-failure-recovery.sh` and the `PostCompact` hook:
+
+1. For each repo from `repos-paths.md`, list worktrees with `git -C "<repo-path>" worktree list --porcelain`.
+2. Match each worktree branch against the canonical pattern `worktree/<story-id>-t<n>-<uid8>` (created by `develop.md` Step 1 sub-step 5). Unmatched worktrees are out-of-scope (developer-owned or unrelated) — leave alone.
+3. For each matched worktree, look up Task `T<n>` in the current tracker and classify:
+   - **🔧 In Progress / 🔄 In Review** → **preserve.** This is the worktree the resumed lane will pick up. Restore `WORKTREE_PATH` and `WORKTREE_BRANCH` to the lane state.
+   - **✅ Done** → **remove.** The squash-merge already completed; the worktree is stale.
+   - **No matching task row** → **remove.** Stale from an aborted-pre-tracker session or a renamed task.
+   - **⏳ Pending** with no impl/test commits in the worktree → **remove.** The lane never started; a fresh worktree will be created when the task is launched.
+4. Surface the classification table to the human and request confirmation before pruning. Never auto-remove worktrees in the same turn — `git worktree remove` is destructive (deletes uncommitted work). Once the human confirms, run `git -C "<repo-path>" worktree remove "<worktree-path>"` followed by `git -C "<repo-path>" branch -D "<branch>"` for each `remove`-classified entry.
+5. Repos running in the worktree-failed fallback (no worktrees, work happens on the feature branch directly) are a valid state — do not flag them.

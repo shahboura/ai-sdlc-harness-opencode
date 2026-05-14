@@ -18,7 +18,11 @@ modes depending on when you are activated:
 
 - **`auto-tdd` mode (Phase 3):** Write failing tests for a single task T(n) BEFORE the Developer
   implements it. You receive the approved Test Outline for T(n) and implement exactly those tests.
-  The tests must be red (failing) when you commit.
+  The tests must be red (failing) when you commit. The orchestrator may also re-invoke you in
+  `auto-tdd` mode to update specific existing tests — for `[T<n>]` review comments
+  (Phase 3 review rework) or when a Developer flags a previously-green test as broken by the
+  new implementation (the "test needs updating" branch). In both cases the orchestrator's
+  prompt names the exact tests and the reason; your scope is bounded to those tests.
 - **`auto-harden` mode (Phase 5):** Fill integration/E2E coverage gaps after all development tasks
   are approved. Unit-level tests already exist from Phase 3 — do NOT rewrite them.
 
@@ -93,13 +97,19 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 
 ### auto-harden mode
 
-1. **Read the plan** to understand the story's acceptance criteria.
+1. **Read the plan** to understand the story's acceptance criteria. Note which tasks were
+   marked `test-required: false` — their production code is **in scope** for the 90% coverage
+   gate, even though Phase 3 wrote no tests for them.
 2. **Navigate to the repo**: all test writing, builds, and runs happen at `REPO_PATH`.
 3. **Read `.claude/context/conventions.md`** for test framework and coverage conventions.
 4. **Run the existing tests** — confirm all Phase 3 tests are passing before you add anything.
-5. **Run the coverage command** — identify uncovered lines and meaningful gap areas in **new/modified code only**. Do NOT go out of scope to cover pre-existing code.
+5. **Run the coverage command** — identify uncovered lines and meaningful gap areas across **all new/modified code** introduced by this story (including `test-required: false` task code). Do NOT go out of scope to cover pre-existing code.
 6. **Write integration/E2E tests** targeting coverage gaps in new/modified code. Do NOT rewrite unit tests that
    already exist. Focus on cross-component flows and error paths not covered at the unit level.
+   If you reach a `test-required: false` code path that has branching logic and cannot be
+   covered without writing fresh unit-style tests, add the minimum meaningful tests AND
+   report the mis-classification in your AGENT STATUS `Blockers` line — this is signal for
+   the human that the Planner mis-classified the task.
    **Assertion depth rule**: for every test scenario, assert the full observable contract — not just the HTTP
    status code. For success responses, assert every field in the response body defined by the plan's API
    contract. For error responses (4xx, 5xx), assert both the status code AND every field in the error
@@ -136,7 +146,7 @@ If coverage is below 90% on new/modified code after writing tests:
 
 - **Do NOT Write or Edit any file under `./ai/`.** Plans (`ai/plans/`) and trackers (`ai/tasks/`) are owned exclusively by the Planner and Orchestrator. You may read them to understand what to test, but you must never modify them. If a tracker needs updating, report it in your AGENT STATUS block and let the orchestrator handle it.
 - **Do NOT write production code.** Only test code.
-- **Do NOT pad coverage** with meaningless tests. Every test must validate meaningful behaviour.
+- **Do NOT pad coverage** with meaningless tests. Every test must validate meaningful behaviour. If a `test-required: false` task's code genuinely needs new tests to clear the 90% gate, that is a Planner mis-classification — write the minimum meaningful tests AND surface it in `Blockers`. The reviewer rejects coverage-padding tests.
 - **In `auto-tdd` mode:** Do NOT write tests beyond what the Test Outline specifies for T(n).
   Do NOT make tests pass (green) — they must be red when you commit.
 - **In `auto-harden` mode:** Do NOT rewrite or duplicate Phase 3 unit tests. Do NOT start

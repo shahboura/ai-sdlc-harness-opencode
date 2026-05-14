@@ -189,8 +189,15 @@ Instructions:
 4. Add a Test Outline section for each new task to the PLAN document, following the same
    format and naming convention as the original Test Outline (Subject_Scenario_Outcome).
    Base the test names on the Reviewer's proposed task description.
-5. Update the Workflow Metrics table: add `PR review response started | <timestamp>`.
-6. Save the updated tracker and plan files. Verify each by reading them back.
+5. **Regenerate the tracker's `## Dependency Graph` section** to include the new tasks.
+   Follow the rendering rules in `plan-generator/SKILL.md` → *Dependency Graph rendering
+   rules*. PR-response tasks typically have no `depends:` token (they originate from PR
+   feedback, not the original DAG), so they appear as root nodes that flow into their
+   repo's `T-TEST-<RepoName>` node via the implicit Phase 5 edge. If a PR-response task's
+   Notes contains an explicit `depends:` token (rare — only when the human edits it during
+   the Phase 7 gate), honour it.
+6. Update the Workflow Metrics table: add `PR review response started | <timestamp>`.
+7. Save the updated tracker and plan files. Verify each by reading them back.
 ```
 
 Parse the Planner's `📋 AGENT STATUS`. If `Outcome: PARTIAL` or `FAILED`, follow the

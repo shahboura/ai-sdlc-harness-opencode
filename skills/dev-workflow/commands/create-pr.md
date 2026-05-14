@@ -49,6 +49,44 @@ pre-pr mode instructions and report format.
 
 Wait for all reviewer background agents to complete (one per repo).
 
+### Step 2b — Cross-Repo Contract Reconciliation (Multi-Repo Only)
+
+*(Skip this step entirely for single-repo stories or when the plan declares no
+Cross-repo contracts.)*
+
+For each contract listed in the plan's **Cross-repo contracts** section:
+
+1. Locate the contract's row in **section 3b — Cross-Repo Contract Verification** of every
+   per-repo Pre-PR Review Report. There must be exactly two entries (one Producer + one
+   Consumer; or one Producer + N Consumers for fan-out contracts).
+2. Compare the `Observed Signature (this repo)` strings across the entries — they MUST be
+   byte-identical (after whitespace normalisation). The compare is purely lexical; do NOT
+   re-read code from any repo (rule #1 forbids orchestrator-side source reading).
+3. If any contract has no matching Producer entry, no matching Consumer entry, or its
+   Observed Signatures differ across repos, classify as **drift**.
+
+Build a reconciliation summary:
+
+```
+## Cross-Repo Contract Reconciliation
+
+| Contract ID | Status | Detail |
+|-------------|--------|--------|
+| C1 | ✅ Match | Producer (AuthService) and Consumer (ApiGateway) signatures agree |
+| C2 | ❌ Drift | Producer signature `Payload={...}` ≠ Consumer signature `Payload={...}` |
+| C3 | ⚠️ Missing side | Producer present (BillingService) but no Consumer entry recorded |
+```
+
+**If every contract is ✅ Match:** continue to Step 3 as normal.
+
+**If any contract has ❌ Drift or ⚠️ Missing side:** treat it the same as a `CHANGES_REQUESTED`
+verdict from one of the repo reviewers — present the reconciliation summary alongside the
+per-repo reports at Step 3, and offer the Step 4 fix-or-override choice. **Do not auto-route
+fixes** to either repo: contract drift is a design-level judgement (producer wrong vs
+consumer wrong vs plan stale), and the human must decide which side moves. Once the human
+picks a side, fixes route to that repo's Developer via the normal Step 4 fixup flow; the
+other repo's Developer is not invoked.
+
 ### Step 3 — Present Pre-PR Review Report(s) to Human
 
 For each repo, display the full Pre-PR Review Report returned by the Reviewer.

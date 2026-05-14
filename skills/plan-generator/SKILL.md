@@ -75,6 +75,22 @@ Break the story into ordered, atomic tasks. For each task:
 - All repo lanes run fully in parallel (contracts eliminate cross-repo blocking)
 - Create one `T-TEST-<RepoName>` per affected repo (e.g., `T-TEST-AuthService`, `T-TEST-BillingService`)
 
+**Dependency notation (machine-readable, parsed by the orchestrator):**
+
+Record intra-repo dependencies as a single comma-separated token in the tracker row's
+**Notes** column using the form `depends: T<n>[, T<n>...]`. The orchestrator parses this
+token in Phase 3 to gate lane progression (see `commands/develop.md` Step 1 sub-step 1).
+
+- Tasks with no dependencies omit the token — do not write `depends: none`.
+- Combine with other Notes tokens via `·` separator. Example:
+  - `test-required: true · depends: T1 · [API: some-library v2.3.0]`
+  - `test-required: true · depends: T1, T2`
+- Only Task IDs in the **same repo** are valid. Cross-repo dependencies are not allowed —
+  use contracts instead.
+- The token must match the regex `depends:\s*T[A-Za-z0-9-]+(\s*,\s*T[A-Za-z0-9-]+)*` so the
+  orchestrator's lane-gating parser succeeds. Whitespace around commas is tolerated;
+  trailing commas are not.
+
 ### 2b. Cross-Repo Contracts (Multi-Repo Only)
 
 When repos communicate at runtime (HTTP API calls, Service Bus messages, shared DTOs), define the **contracts** upfront so both sides can develop in parallel without waiting.
@@ -267,14 +283,49 @@ Before writing the tracker, run `date -u +"%Y-%m-%d %H:%M UTC"` and use the outp
 
 **CRITICAL**: Use this EXACT column schema. Do NOT invent, rename, remove, or reorder columns. Every tracker row must have exactly 7 pipe-separated columns.
 
+**Dependency Graph rendering rules** (populates the `## Dependency Graph` section in the
+Format block below). The graph is a static visual companion to the task table — status is
+NOT encoded; the table is the single source of truth for status. The graph is regenerated
+only when Phase 7 (PR review response) adds new tasks; the orchestrator never modifies it
+mid-workflow.
+
+1. **Direction:** `flowchart LR` — left-to-right reads as execution order (dependencies on
+   the left, dependents on the right).
+2. **Node IDs:** Replace every `-` in a Task ID with `_` for the Mermaid node ID, since
+   some renderers reject `-` in node identifiers. The display label keeps the original ID
+   verbatim. Example: `T-TEST-AuthService` → node ID `T_TEST_AuthService`, label
+   `T-TEST-AuthService: Test hardening`.
+3. **Labels:** `<Task ID>: <title>` with the title truncated to 40 characters (append `…`
+   if cut). Wrap the label in `[...]` for rectangle nodes.
+4. **Edges:** for every `depends: T<a>, T<b>...` token in the task's Notes, draw
+   `T<a> --> T<this>` and `T<b> --> T<this>`. Tasks with no `depends:` token become root
+   nodes (no incoming edges).
+5. **Implicit T-TEST edges:** every dev task `T<n>` in repo `R` MUST have an edge to
+   `T-TEST-<R>` (Phase 5 hardening cannot begin until all dev tasks in the repo are Done).
+   Render these edges explicitly even though the `depends:` token doesn't carry them — the
+   graph captures the full execution DAG, including Phase 5.
+6. **Multi-repo grouping:** if the story affects two or more repos, wrap each repo's tasks
+   in a `subgraph <RepoName>` block (use the bare repo name as the subgraph title; no
+   quotes). For single-repo stories, emit a flat graph with no `subgraph` wrapping.
+7. **No node styling:** do not emit `classDef`, `:::class` modifiers, fill colours, or
+   stroke overrides. The table holds status; the graph holds dependencies only.
+8. **Edge placement:** declare all nodes (inside subgraphs if multi-repo) first, then list
+   every edge below the subgraph blocks. Edges crossing subgraph boundaries are valid only
+   if a contract forced an intra-repo dependency to reference another repo's task — which
+   is NOT allowed (cross-repo dependencies are forbidden, see rule above on intra-repo
+   dependencies). Reject any rendering attempt that would produce a cross-subgraph edge.
+
+The Format block below shows the multi-repo case. For a single-repo story, omit both
+`subgraph` blocks and list nodes + edges flat.
+
 Format:
-```markdown
+````markdown
 # Task Tracker — <Story Title> (<Story-ID>)
 
 | Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
 |---------|------|-------|--------|------------------|-----------|-------|
 | T1 | AuthService | ... | ⏳ Pending | — | — | test-required: true |
-| T2 | AuthService | ... | ⏳ Pending | — | — | Depends on T1 |
+| T2 | AuthService | ... | ⏳ Pending | — | — | test-required: true · depends: T1 |
 | T3 | BillingService | ... | ⏳ Pending | — | — | test-required: false |
 | T-TEST-AuthService | AuthService | Test hardening | ⏳ Pending | — | — | Phase 5 |
 | T-TEST-BillingService | BillingService | Test hardening | ⏳ Pending | — | — | Phase 5 |
@@ -286,9 +337,30 @@ Column definitions:
 - **Status**: One of ⏳ Pending, 🔧 In Progress, 🔄 In Review, ✅ Done
 - **Reviewer Verdict**: ✅ Approved, 🔄 Changes Requested, or — (not yet reviewed)
 - **Commit(s)**: Squash-merge commit hash(es) filled in by the orchestrator after approval (— until then)
-- **Notes**: Must include `test-required: true` or `test-required: false`. Also note cross-repo dependencies, caveats, or review comment references.
+- **Notes**: Must include `test-required: true` or `test-required: false`. For intra-repo dependencies, include the canonical `depends: T<n>[, T<n>...]` token (parsed by the orchestrator in Phase 3). Multiple Notes tokens are joined with ` · ` separators. Also note caveats or review comment references.
 
 **Legend:** ⏳ Pending · 🔧 In Progress · 🔄 In Review · ✅ Done
+
+---
+
+## Dependency Graph
+
+```mermaid
+flowchart LR
+    subgraph AuthService
+        T1[T1: Add ITokenService]
+        T2[T2: Implement TokenRefreshService]
+        T_TEST_AuthService[T-TEST-AuthService: Test hardening]
+    end
+    subgraph BillingService
+        T3[T3: Wire Service Bus consumer]
+        T_TEST_BillingService[T-TEST-BillingService: Test hardening]
+    end
+    T1 --> T2
+    T1 --> T_TEST_AuthService
+    T2 --> T_TEST_AuthService
+    T3 --> T_TEST_BillingService
+```
 
 ---
 
@@ -336,7 +408,7 @@ these entries — they are recorded for human review at GATE #2.)*
 
 ---
 🤖 Generated with [Claude Code](https://claude.ai/claude-code)
-```
+````
 
 **Notes:**
 - `Test Written`: timestamp when the Tester commits the failing tests for a `test-required: true` task (filled by orchestrator after Tester AGENT STATUS parsed). Leave `—` for `test-required: false` tasks; `N/A` for T-TEST rows.
