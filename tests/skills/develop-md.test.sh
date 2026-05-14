@@ -57,6 +57,11 @@ assert_contains 'DO NOT create another one' 'agent prompts forbid creating a wor
 # PATTERN_HINTS_CTX wired into the tester launch (Task 1).
 assert_contains 'PATTERN_HINTS_CTX from the plan' 'tester prompt includes PATTERN_HINTS_CTX'
 
+# WS-5 dev-loop hardening — UID8 generation must hard-fail when empty
+# (prevents a worktree branch like `worktree/<story>-t<n>-` colliding).
+assert_contains 'if [ -z "$UID8" ]; then' 'develop.md hard-fails when UID8 is empty'
+assert_contains 'UID8 generation failed' 'develop.md surfaces the UID8-failure cause to the human'
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
     printf '\nFailures:\n' >&2

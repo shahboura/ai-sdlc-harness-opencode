@@ -106,6 +106,10 @@ For each lane where `phase == "idle"` and `pending` is non-empty:
    ```bash
    UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
           || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
+   if [ -z "$UID8" ]; then
+     echo "develop.md Step 1.5: UID8 generation failed — neither uuidgen nor python3 produced a value. Pause the lane and escalate to the human." >&2
+     exit 1
+   fi
    WORKTREE_BRANCH="worktree/<story-id>-t<n>-${UID8}"
    WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"
    if git -C "<REPO_PATH>" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "<feature-branch>"; then

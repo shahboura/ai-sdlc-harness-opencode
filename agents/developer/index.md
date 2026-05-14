@@ -75,13 +75,31 @@ If the orchestrator's worktree-creation attempt failed twice, it inlines a **REP
    - Confirm the expected failing tests are indeed **red**. If any are already green,
      **halt and flag** — do not proceed. The Tester's work may be incomplete or the
      test is not actually covering new code.
-4. **Implement** the task:
+4. **API-compatibility precondition (BEFORE writing any production code):**
+   - Read the task's **Notes** column for any `[API: <lib> v<version>]` annotations
+     (planted by `plan-generator` Step 1c — see `skills/plan-generator/SKILL.md`).
+   - For **each** annotated library: open the library's official docs / type definitions
+     for *that exact version* (NOT the latest stable, NOT memory) and confirm the method
+     signatures and types you intend to call are present and shaped as the plan describes.
+   - This is a precondition, not a recovery step. If your code is going to use
+     `someLib.foo(bar=qux)`, you verify `foo`'s parameter list against v`<version>` docs
+     **before** writing the call site. Catching an API break at the source costs one
+     doc-read; catching it after the first build failure costs at least one wasted
+     compile + the retry budget below.
+   - If a library is annotated but you do not need any of its APIs for this task, no
+     verification is required. Annotations on tasks where you didn't touch that library
+     are just noise — record `API verified: not needed (T<n> did not call <lib>)` in
+     your Concerns when summarising.
+   - If the task has no `[API:]` annotations, this step is a no-op — proceed to step 5
+     ("Implement").
+
+5. **Implement** the task:
    - Create or modify the necessary production code files following ALL conventions.
    - Follow the project structure conventions strictly.
    - Run the restore command if new dependencies are needed.
    - Ensure the **build passes with zero errors and zero warnings**.
    - For TDD tasks: ensure **ALL pre-existing tests pass** (turn red → green).
-5. **Self-review before committing** — run through this checklist. If any answer is "no," fix it before committing:
+6. **Self-review before committing** — run through this checklist. If any answer is "no," fix it before committing:
    - **Completeness:** Did I fully implement everything in the task description?
    - **Quality:** Are names clear and accurate? Does code follow all language conventions?
    - **Discipline:** Did I avoid overbuilding (YAGNI)? Did I follow existing patterns?
@@ -93,7 +111,7 @@ If the orchestrator's worktree-creation attempt failed twice, it inlines a **REP
    failed check(s) in `Concerns`, and let the orchestrator re-invoke you with focused
    instructions. The combination `Outcome: SUCCESS` + `Self-review: FAIL` is invalid — the
    orchestrator treats it as `PARTIAL` and re-routes regardless of what you report.
-6. **Commit production code only** with proper message format:
+7. **Commit production code only** with proper message format:
    - TDD task: `#<STORY-ID> #<TASK-ID> impl: description of what changed`
    - Non-TDD task: `#<STORY-ID> #<TASK-ID>: description of what changed`
    Both Story ID and Task ID are required. Task ID is the planner-assigned ID (T1, T2, ...).
@@ -102,7 +120,7 @@ If the orchestrator's worktree-creation attempt failed twice, it inlines a **REP
    Co-Authored-By: Claude Code <noreply@anthropic.com>
    ```
    **Do NOT commit the task tracker. Do NOT modify test files.**
-7. **Report worktree details** in your AGENT STATUS block.
+8. **Report worktree details** in your AGENT STATUS block.
 
 ### If Reviewer returns changes requested:
 
@@ -127,7 +145,7 @@ When starting, immediately:
 Use the build command from your LANGUAGE CONTEXT:
 
 1. **Attempt 1**: Read build output, identify errors, fix, re-run.
-   - **API compatibility check (before guessing at fixes):** If the error is a method/function not found at compile time, a runtime exception thrown by a library on construction or invocation, or a type mismatch on a library call — treat it as a potential API-compatibility mismatch first. Check the task's **Notes** column for an `[API: <lib> v<version>]` annotation, then verify the prescribed method signature against the library's official docs for that exact version. Use the version-correct alternative before attempting any other fix. This avoids the spiral of trying multiple workarounds when the real cause is a version break.
+   - **API compatibility re-check (if Step 4 was somehow skipped):** Step 4 already verifies every `[API: <lib> v<version>]` annotation against docs **before** writing code, so by the time you reach this recovery path an API-version break should be impossible. If it happens anyway — method/function not found at compile time, runtime exception on library construction or invocation, type mismatch on a library call — treat it as a Step 4 escape: re-open the docs for the prescribed version, verify the signature, fix to the version-correct call, then continue. Do **not** start guessing at other causes until this check has been re-run.
 2. **Attempt 2**: Grep for related usages/types, fix, re-run.
 3. **Escalate**: If build still fails after 2 fix attempts, do NOT commit. Report failure
    with full build output and set Outcome to `FAILED`.
