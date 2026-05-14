@@ -79,6 +79,73 @@ does not, stop and inform the user — do not create it. See
 `skills/providers/local-markdown/work-items.md` for the full adapter,
 including how H2 sections are mapped to story fields.
 
+### 1b. Fetch Related Context (Comments + Parent)
+
+After the main work item lands, pull two more pieces of context — both bounded so the
+fetch cost stays predictable.
+
+**Comments (always, when the adapter declares `work_item.list_comments: ✅`).**
+
+Fetch the **last 20 comments** in chronological order (or all of them if there are
+fewer). Skip if the adapter declares this capability as `❌` / unsupported (e.g.
+local-markdown) — surface a one-line note in the requirements summary that comments
+were not pulled.
+
+Per-provider tools (canonical names from the adapters):
+
+- ADO: `mcp__azure-devops__wit_list_work_item_comments(id=$ID, project=$PROJECT, top=20)`
+- Jira: `mcp__jira__get_issue_comments(issueIdOrKey=$ID, limit=20)`
+- GitLab: `mcp__gitlab__list_issue_notes(projectId=$PROJECT, issueIid=$ID, per_page=20)`
+- GitHub: `mcp__github__list_issue_comments(owner=$OWNER, repo=$REPO, issueNumber=$ID, perPage=20)`
+- local-markdown: no comments concept — skip.
+
+Bot comments (system updates, build/test postings, CI summaries) should be filtered
+out before display. The retained comments inform Step 3 (gap analysis) and are
+referenced verbatim in Clarifications where they answer questions the description
+left open.
+
+**Parent (one level only, when the work item declares one).**
+
+Inspect the work item's response for a parent reference:
+
+- ADO: scan `relations[]` for `rel == "System.LinkTypes.Hierarchy-Reverse"` → fetch
+  the parent work item by ID.
+- Jira: read the `fields.parent` field (epic link or hierarchy parent) → fetch the
+  parent via `mcp__jira__get_issue`.
+- GitLab / GitHub: there is no native parent/child — skip unless the description
+  contains a `tracked-by: #N` line, in which case fetch the referenced issue.
+- local-markdown: no parent concept — skip.
+
+If a parent is found, fetch **only its title and description** (one level deep —
+do not recurse into the parent's parent). Hold both in context for Step 2's
+"Linked Items" rendering and Step 3's gap analysis (parent context often resolves
+ambiguity in the child's AC).
+
+### 1c. Closed-State Guard
+
+If the work item's State / Status maps to one of the closed/done/resolved family
+(ADO `Closed` / `Resolved` / `Removed`; Jira `Done` / `Resolved` / `Cancelled`;
+GitLab / GitHub `closed`; local-markdown — N/A), **stop and confirm with the human
+before proceeding**:
+
+```
+## Closed Story Detected
+
+Work item <ID> is in state `<state>` (closed/done/resolved). Continuing intake
+will produce a Requirements Summary for a story that already shipped, which
+usually indicates:
+  - The wrong ID was passed.
+  - You're intentionally re-opening or reviewing a past story.
+
+Options:
+  [1] Continue anyway — proceed to Step 2.
+  [2] Stop — abort intake. (No artefacts will be written.)
+
+Type 1 or 2.
+```
+
+On `[2]`, end the invocation with `Outcome: BLOCKED` and no requirements summary.
+
 ### 2. Extract and Display
 
 Using the field mappings from the provider adapter, extract and present:
@@ -88,8 +155,10 @@ Using the field mappings from the provider adapter, extract and present:
 - State / Status
 - Area / Project / Labels
 - Iteration / Sprint / Milestone
-- Linked Items (parent, children, related, epics)
+- Linked Items (parent — from Step 1b — plus children, related, epics)
 - Attachments (list filenames and types)
+- Comments (from Step 1b — last 20 non-bot, chronological; or `(none / not supported)`
+  if the adapter does not declare `work_item.list_comments`)
 
 **Provider-specific extraction notes:**
 - **ADO**: Description and AC are HTML → convert to markdown
@@ -119,17 +188,54 @@ If ANY gaps found, present numbered clarifying questions to the human user.
 
 ### 5. Output Requirements Summary
 
+The Acceptance Criteria block uses a **canonical schema** so downstream consumers
+(`plan-generator` Step 0a counts ACs from this single shape; the Reviewer's spec
+checks reference each AC by number) can parse the output regardless of which
+provider it came from.
+
+**Canonical AC format:**
+
+```
+### Acceptance Criteria (Validated)
+1. <plain assertion — one sentence per AC>
+   - Given: <precondition — only if the source supplied one>
+   - When: <action — only if the source supplied one>
+   - Then: <observable outcome — only if the source supplied one>
+2. <plain assertion>
+...
+```
+
+Rules for the AC list:
+
+- **Numbered, starting at 1.** Each item is a single plain-language assertion
+  ending in a period.
+- **Given / When / Then sub-fields are optional** — emit them ONLY when the
+  source AC was already structured that way (e.g. Jira issues using Gherkin,
+  ADO criteria written in BDD form). Do not synthesise Given/When/Then from
+  prose — that introduces interpretation the human did not authorise.
+- **No nested lists, no AC-ID prefixes (`AC-1:`), no sub-bullets beyond
+  Given/When/Then.** Plan-generator's parsing relies on the numbered shape.
+- **No empty entries.** An AC that the human marked TBD during Step 4
+  clarification must be either resolved or struck — do not pass an unresolved
+  AC into the summary.
+
+Full summary template:
+
 ```markdown
 ## Requirements Summary — $ID
 
 **Title**: ...
 **Story/Issue ID**: $ID
 **Provider**: <ado | jira | gitlab | github | zoho | local-markdown>
+**Parent**: <parent ID + title, or "(none)" if no parent was fetched in Step 1b>
+**State**: <open | in-progress | closed-confirmed>   <!-- "closed-confirmed" only after the Step 1c override -->
 **Sprint/Milestone**: ...
 
+### Description
+<normalised markdown description>
+
 ### Acceptance Criteria (Validated)
-1. ...
-2. ...
+<numbered list per the canonical schema above>
 
 ### Clarifications Received
 - Q1: ... → A1: ...
@@ -139,6 +245,9 @@ If ANY gaps found, present numbered clarifying questions to the human user.
 
 ### Out of Scope
 - ...
+
+### Comments Reviewed (Last <N>)
+<one-line-per-comment summary; or "(adapter does not support comments)" if Step 1b skipped this>
 
 ### Ready for Planning: ✅ YES / ❌ NO (reason)
 
