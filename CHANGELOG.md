@@ -6,6 +6,10 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
+---
+
+## [1.2.0] — 2026-05-15
+
 ### Features
 
 - **Harness agents use unique `ai-sdlc-` prefixed names.** The four harness agents are now registered as `ai-sdlc-planner`, `ai-sdlc-developer`, `ai-sdlc-reviewer`, and `ai-sdlc-tester` (previously `planner`, `developer`, `reviewer`, `tester`). Generic single-word names could conflict with user-defined agents of the same name in global or project setups; the prefix makes the harness agents unambiguous. The reviewer's mode-specific agents follow the same pattern: `ai-sdlc-pre-pr` and `ai-sdlc-pr-comment-analysis`. The `agent-status-check` hook, the tester activation guard, all skill invocations, and the status-block schema are updated accordingly. Agent instance names used for parallel-lane tracking (`tester-<repo>`, `developer-<repo>`, `reviewer-<repo>`) are instance labels, not agent identifiers, and are unchanged.
