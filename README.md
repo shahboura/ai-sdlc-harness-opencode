@@ -7,7 +7,7 @@
 | **Story Workflow** | Refine, analyze, and technically groom stories before development | `/story-workflow <command> <work-item-id>` |
 | **Dev Workflow** | Implement a story end-to-end — plan, code, review, test, PR/MR | `/dev-workflow <Work-Item-ID>` |
 
-> The authoritative workflow specification — phases, ownership rules, status transitions, non-negotiable rules — lives in [`CLAUDE.md`](CLAUDE.md). This README is an introduction; `CLAUDE.md` is the spec.
+> The authoritative workflow specification — phases, ownership rules, status transitions, non-negotiable rules — lives in [`CLAUDE.md`](CLAUDE.md). This README is an introduction; `CLAUDE.md` is the spec. First time? Start with [`getting-started.md`](getting-started.md) for a 10-minute path from install to first story.
 
 ## Installation
 
@@ -281,6 +281,7 @@ The Developer works in a temporary git worktree — a separate checkout of the r
 
 Quality is enforced through independent verification at each stage:
 
+- The **Developer** runs an **API-compatibility precondition** before writing any production code for tasks that carry an `[API: <lib> v<version>]` annotation (stamped by the Planner in Phase 2). It consults the library's docs for that exact version to verify method/type signatures — not the latest stable, not from memory. Only then does production code get written.
 - The **Developer** must run the repo's build command (from `language-config.md`) and pass its strictness policy before committing. On failure: 2 retry attempts, then escalate to human.
 - The **Reviewer** must independently run the build command (and test command for test reviews) — it never trusts another agent's build claim.
 - The **Tester** must run the test command and achieve ≥ 90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code. On failure: 2 retry attempts, then escalate.
@@ -349,7 +350,7 @@ The plugin ships with hooks that enforce harness invariants at the Claude Code l
 
 **Shared library** — every guard script sources `scripts/_hook-lib.sh` for python probing, payload reading, dotted-path field extraction (including list-shaped `tool_response` blocks), exit helpers, and workspace-root walk-up. Commit-command parsing lives in `scripts/_git_argparse.py` — a `shlex`-based parser that replaces the brittle single-regex extractor.
 
-**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). Skill files have doc-grep regression tests under `tests/skills/`, and a behavioural worktree fixture lives under `tests/integration/`. Run everything via `tests/run.sh` (the top-level aggregator), or individual suites via their own `run.sh`.
+**Tests** — every hook has a pure-bash test suite under `tests/hooks/` (no `bats` dependency). Skill files have doc-grep regression tests under `tests/skills/`. Provider adapter capability assertions live under `tests/adapters/`. A behavioural worktree fixture lives under `tests/integration/`. Run everything via `tests/run.sh` (the top-level aggregator), or individual suites via their own `run.sh`.
 
 ## Utility Commands
 
@@ -364,6 +365,7 @@ The plugin ships with hooks that enforce harness invariants at the Claude Code l
 ```
 ai-sdlc-harness/
 ├── CLAUDE.md                  # Authoritative workflow specification
+├── getting-started.md         # 10-minute onboarding guide
 ├── .claude-plugin/
 │   ├── plugin.json            # Plugin manifest (name, version, skills root)
 │   └── marketplace.json       # Marketplace entry
@@ -386,8 +388,14 @@ ai-sdlc-harness/
 │   └── providers/             # Provider adapter skills (ado, jira, gitlab, github, zoho, gh-cli, glab-cli, local-markdown, shared/)
 ├── hooks/
 │   └── hooks.json             # Plugin hook registrations
-└── scripts/
-    └── *.sh                   # Guardrail scripts
+├── scripts/
+│   ├── *.sh                   # Guardrail shell entry points
+│   └── *.py                   # Guard logic + shared library (_hook-lib.sh, _git_argparse.py, _sensitive_patterns.py)
+└── tests/
+    ├── hooks/                 # Pure-bash unit tests for every hook
+    ├── skills/                # Doc-grep regression tests for skill files
+    ├── adapters/              # Provider adapter capability assertions
+    └── integration/           # Behavioural worktree fixture
 ```
 
 Target-workspace artifacts — `ai/plans/`, `ai/tasks/`, and `.claude/context/` — are generated inside your working directory by `/init-workspace` and the workflow phases. They do **not** live inside this plugin repo.
