@@ -69,6 +69,8 @@ These rules apply to ALL phases of the dev-workflow. Individual command files mu
 7. **Plan is the contract**: The approved plan is the single source of truth.
 8. **Tracker is persistent state**: Update in the working tree after every status change. The tracker stays **uncommitted** throughout Phases 3-5 and is committed once in Phase 6 before PR creation. Read the tracker before starting any work.
    **Canonical location:** The tracker and plan always live under `<WORKSPACE_ROOT>/ai/`. The orchestrator MUST edit the workspace path — never a code-repo copy. The repo copy does not exist until Phase 6. Never copy `ai/` files from the workspace into any code repo before Phase 6. WORKSPACE_ROOT is the directory whose `.claude/context/` folder holds `provider-config.md`; derive it once at the start of Phase 2 and use it throughout.
+
+   **Exception — non-repo workspace at Phase 6:** When the workspace itself is not a git repository, the workspace `ai/` cannot be committed. Phase 6 (`commands/create-pr.md` Step 6) is the ONE point in the workflow where the orchestrator copies the workspace tracker and plan into each affected repo's `ai/` directory using the Read + Write tools (never `cp` — the `bash-write-guard` hook blocks Bash writes to `/ai/` paths by design). After Phase 6 the workspace copy remains the canonical edit target; any later amendments (e.g. Step 9's `PR created` metric) must update the workspace copy first and re-sync via Read + Write. This exception is workspace-not-a-git-repo only; when the workspace IS a git repo, the rule above is absolute.
 9. **Cross-repo contracts**: Repos never block each other. Cross-repo boundaries (API calls, Service Bus messages, shared DTOs) are resolved via contracts defined by the planner in Phase 2. The orchestrator includes relevant contracts in each developer's prompt so both sides can develop in parallel. The reviewer verifies contract compliance.
 10. **Background agents require `mode: "auto"`**: All agents launched with `run_in_background: true` MUST use `mode: "auto"` in the Agent tool call. Background agents cannot prompt for interactive permission approval — they will be blocked and fail. This applies to developers, reviewers, and testers in multi-repo parallel lanes.
 11. **Provider-agnostic operations**: All work item and PR/MR operations are routed through provider adapters. Read `.claude/context/provider-config.md` to determine which providers are active. Never hardcode provider-specific tool names in orchestrator logic — always resolve via `provider-config.md` and the corresponding adapter in `skills/providers/<provider>/`. This applies to Phase 1 (story fetching), Phase 6 (PR/MR creation and linking), and all story-workflow commands.
@@ -108,13 +110,23 @@ All agents end every response with a `📋 AGENT STATUS` block. The orchestrator
 | `FAILED` | Read Blockers and build/test output. If retryable, re-invoke agent (max 1 retry). If not, pause workflow and report to human. |
 | `BLOCKED` | Read Blockers field. If human input needed, present to human. If dependency-related, resolve dependency first. |
 
+**Phase 6 Reviewer Verdict matrix** (separate field from `Outcome`; only applies when `Outcome: SUCCESS`):
+
+| Verdict | Orchestrator action |
+|---------|---------------------|
+| `APPROVED` | Present the full Pre-PR Report to the human and request the gate-3 approval as normal. |
+| `APPROVED_WITH_CONCERNS` | Treat the same as `APPROVED` for control-flow purposes — present the report, surface the `Warnings`/`Suggestions` sections prominently in the gate prompt, and request the gate-3 approval. The human may proceed or ask for fixes. |
+| `CHANGES_REQUESTED` | Do NOT present a normal approval gate. Show the `Critical issues` block and offer the fix-or-override choice defined in `commands/create-pr.md` Step 3. |
+
+If the Phase 6 reviewer reports `Outcome: FAILED` (build/test broken, worktree missing, etc.) the standard `Outcome` matrix above takes precedence and the Verdict is ignored.
+
 **Per-agent status fields:**
 
 | Agent | Key status fields |
 |-------|------------------|
 | **Planner** | `Outcome`, `Files written`, `Files failed`, `Blockers` |
 | **Developer** | `Repo`, `Repo path`, `Worktree`, `Worktree branch`, `Commit`, `Build result`, `Build attempts`, `Files changed`, `Self-review` (no tracker fields — orchestrator owns tracker) |
-| **Reviewer (Phase 3/5)** | `Repo`, `Repo path`, `Spec compliance`, `Code quality verdict`, `Verdict`, `Worktree reviewed`, `Build verified`, `Tests verified`, `Review comments` (full `[S<n>]`/`[R<n>]` list) |
+| **Reviewer (Phase 3/5)** | `Repo`, `Repo path`, `Spec compliance`, `Code quality verdict`, `Verdict`, `Worktree reviewed`, `Build verified`, `Tests verified`, `Review comments` (full `[S<n>]`/`[R<n>]`/`[T<n>]` list) |
 | **Tester** | `Repo`, `Repo path`, `Task`, `Tests written`, `Tests passing`, `Coverage %`, `Test attempts`, `Commit` |
 | **Reviewer (Phase 6)** | `Verdict`, `AC coverage`, `Task coverage`, `Test coverage`, `Critical issues` — full Pre-PR Report in response body. See `agents/reviewer/pre-pr.md`. |
 | **Reviewer (Phase 7)** | `Outcome`, `Comments analysed`, `Valid`, `Invalid`, `Partial` — full PR Comment Analysis Report in response body. See `agents/reviewer/pr-comment-analysis.md`. |
@@ -124,17 +136,19 @@ All agents end every response with a `📋 AGENT STATUS` block. The orchestrator
 2. If the block is MISSING, the Stop hook will catch this and force the agent to add it. If after retry it's still missing, log a warning and proceed based on the agent's prose output.
 3. Extract the `Outcome` field first — it determines the branch.
 4. For Developer: also check `Repo`, `Repo path`, `Worktree`, `Worktree branch`, `Commit`, `Build result`, and `Build attempts`. If `Build attempts: 3` and `FAILED`, do NOT retry — escalate. The `Repo`, `Repo path`, and worktree fields are REQUIRED for the reviewer and merge steps. Use `Repo` to map the agent back to its lane.
-5. For Reviewer: check `Verdict`. If `CHANGES_REQUESTED`, extract the `[R<n>]` comments from the `Review comments` field and relay to the Developer. The orchestrator (not the reviewer) updates the task tracker.
+5. For Reviewer: check `Verdict`. If `CHANGES_REQUESTED`, extract structured comments from the `Review comments` field and route them per the three-prefix model in *Structured Review Comments* below — `[R<n>]` to the Developer, `[T<n>]` to the Tester, `[S<n>]` by file path (production → Developer, test → Tester). The orchestrator (not the reviewer) updates the task tracker.
 6. For Tester: check `Tests passing` and `Coverage`. If `Coverage` < 90% after `Test attempts: 3`, escalate.
 
 ## Structured Review Comments
 
-The Reviewer uses two comment formats (authoritative format in `agents/reviewer/index.md`):
-- `[S<n>]` — spec compliance failures (Phase A); relayed to Developer when spec fails
-- `[R<n>]` — code quality issues (Phase B), with severities CRITICAL / WARNING / SUGGESTION
+The Reviewer uses three comment prefixes (authoritative format in `agents/reviewer/index.md`):
+- `[S<n>]` — spec compliance failure (Phase A). Short-circuits Phase B. Routed by file path: production-code path → Developer; test-file path → Tester.
+- `[R<n>]` — code quality issue in **production** code (Phase B), with severities `CRITICAL | WARNING | SUGGESTION`. Routed to the Developer.
+- `[T<n>]` — code quality / Test-Outline issue in **test** code (Phase B), with the same severities. Routed to the Tester.
 
-The orchestrator relays the full `Review comments` field verbatim — it does not parse
-individual comments. If spec fails, only `[S<n>]` comments are relayed; code quality is skipped.
+The orchestrator relays the full `Review comments` field verbatim to each downstream agent — it does not parse individual comments beyond grouping by prefix to choose the recipient. If spec fails (Phase A), only `[S<n>]` comments exist; code quality is skipped. There is no separate "suggestion" prefix — `SUGGESTION` is a severity inside `[R<n>]`/`[T<n>]`.
+
+When both `[R<n>]` and `[T<n>]` are emitted in the same review round, invoke the Tester first (so tests stabilise) and then the Developer in the same worktree. Routing details live in `commands/develop.md` Step 4.
 
 ## Error Handling
 

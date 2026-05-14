@@ -104,7 +104,7 @@ Do NOT update the tracker — return your review report to the orchestrator.
 
 - If `Verdict: APPROVED` — **Update tracker**: set `T-TEST-<RepoName>` → ✅ Done, set `Reviewer Verdict` to ✅ Approved, and set task `Completed` in Task Metrics. Then proceed to next repo (or Phase 6 if all repos done).
 
-- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Relay `[R<n>]` or `[T<n>]` comments to Tester; tester addresses and resubmits. After tester SUCCESS, update back to 🔄 In Review. Loop back to Step 2.
+- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Phase 5 only writes test code, so every structured comment is routed to the Tester regardless of prefix: relay all `[T<n>]`, `[S<n>]`, and any `[R<n>]` comments (the last is an out-of-band reviewer error worth surfacing — include them verbatim and flag the prefix mismatch to the human if they recur). The tester addresses and resubmits. After tester SUCCESS, update back to 🔄 In Review. Loop back to Step 2.
 
 ### Parallel Hardening (Multi-Repo)
 

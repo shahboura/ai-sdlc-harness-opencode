@@ -265,11 +265,13 @@ Parse the `📋 AGENT STATUS` block from the developer.
    2. CODE QUALITY (Phase B): Only if spec passes — run the build command at the worktree
       path, evaluate language conventions and PR checklist.
 
-   Produce your structured review verdict. Label comments as:
-   - [R<n>] — change required in production code (Developer must fix)
-   - [T<n>] — change required in test code (Tester must fix)
-   - [S<n>] — suggestion (non-blocking)
-   Do NOT update the tracker — the orchestrator handles that.
+   Produce your structured review verdict. Label comments per `agents/reviewer/index.md`:
+   - [S<n>] — spec compliance failure (Phase A). Place the comment against the file that needs
+     to change to satisfy the plan — production or test.
+   - [R<n>] — quality issue in production code (Phase B) — routed to the Developer.
+   - [T<n>] — quality issue in test code (Phase B) — routed to the Tester.
+   Suggestions are NOT a separate prefix — emit them as `SUGGESTION` severity inside [R<n>] or
+   [T<n>]. Do NOT update the tracker — the orchestrator handles that.
    Return your full review report.
    ```
 
@@ -336,10 +338,17 @@ EOF
 
    Do NOT pause the workflow or notify the human — continue immediately to rework.
 
-2. **Classify review comments** by type:
-   - `[R<n>]` — production code changes → route to **Developer**
-   - `[T<n>]` — test code changes → route to **Tester**
-   - `[S<n>]` — suggestions (non-blocking, include for awareness but do not block)
+2. **Classify review comments** by prefix (authoritative definitions in
+   `agents/reviewer/index.md` and orchestrator rule *Structured Review Comments*):
+   - `[R<n>]` — production-code change → route to **Developer**
+   - `[T<n>]` — test-code change → route to **Tester**
+   - `[S<n>]` — spec compliance failure → route by the **file path inside the comment**:
+     production file → Developer, test file → Tester. If a single `[S<n>]` mentions both
+     (e.g. plan requires both impl and test changes), route to whichever agent owns the file
+     listed in the comment; if ambiguous, default to the Developer and include the comment
+     verbatim so they can flag it.
+   When both Developer- and Tester-bound comments exist in the same round, invoke the Tester
+   first (so the failing/refined tests are in the worktree) and then the Developer.
 
 3. **If there are `[T<n>]` comments (test rework needed):**
    Re-invoke **@tester** in the SAME worktree with `run_in_background: true`, `name: "tester-<repo-name>"`, `mode: "auto-tdd"`:
