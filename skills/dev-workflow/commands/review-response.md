@@ -176,7 +176,12 @@ no tasks are created, no commits made.
 
 Collect the accepted `[PC-<n>]` comments along with the Reviewer's proposed task outlines.
 
-Invoke `@planner` (foreground) with the existing tracker and plan:
+Invoke `@planner` (foreground) with the existing tracker and plan. The Planner's
+behaviour in this mode is documented in `skills/plan-generator/SKILL.md` under
+**Phase 7 Amendment Mode** — the prompt below sets the orchestrator-side context
+the skill needs (paths, story ID, accepted comments, round number); the skill
+handles the row template, dependency-graph regeneration, and the no-reorder /
+no-remove invariant on existing rows.
 
 ```
 @planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
@@ -187,6 +192,10 @@ CONTEXT:
 - Tracker path: <ai/tasks/<existing-tracker-filename>>
 - Plan path: <ai/plans/<existing-plan-filename>>
 - Story ID: #<STORY-ID>
+- Round: <N>   # 1 on the first Phase 7 invocation for this story, 2 on a second
+               # round of PR comments, etc. Derived by the orchestrator from
+               # the count of existing `## Amendments (PR Review Round …)`
+               # headings in the tracker, plus one.
 
 ACCEPTED PR COMMENTS TO ADDRESS:
 [PC-<n>] Repo: <repo-name> | File: <file-path>:<line>

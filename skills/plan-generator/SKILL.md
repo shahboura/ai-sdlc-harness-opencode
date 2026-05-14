@@ -21,6 +21,49 @@ Take a validated requirements summary and produce a comprehensive implementation
 
 ## Steps
 
+### 0a. Minimum-Input Gate (bounces back to story-intake on failure)
+
+Before proposing approaches or reading any code, verify the requirements summary is
+substantive enough to plan against. The Planner is expensive — a thin or empty summary
+produces an unplanable mess that wastes the human's review time at GATE #1.
+
+Check, in order:
+
+1. **Description present.** The requirements summary must include a non-empty
+   `Description` (or equivalent narrative) section. A single-line title is not enough.
+2. **At least one acceptance criterion.** The summary must declare at least one entry
+   under `## Acceptance Criteria` (or the provider-specific section the
+   `story-intake` skill normalises to). An empty AC list means there's no behavioural
+   contract to plan against.
+3. **At least one repo configured.** Read `.claude/context/repos-metadata.md` and
+   confirm at least one repo row is declared. A workspace with no repos cannot host
+   any of the tasks the Planner would produce.
+
+If any of these checks fails, **STOP**. Do not proceed to Step 0. Surface this to the
+human and bounce back to `story-intake`:
+
+```
+## Plan generation aborted — requirements summary is below the minimum input bar
+
+  - Description: <present | MISSING>
+  - Acceptance criteria count: <N>
+  - Configured repos (repos-metadata.md): <N>
+
+The Planner cannot produce a usable plan from this. Re-run
+`/dev-workflow plan <story-id>` after one of:
+  [1] Re-running `/story-intake <story-id>` so the requirements summary is
+      filled in (description, ACs).
+  [2] Re-running `/init-workspace` if `repos-metadata.md` is empty.
+  [3] Editing the requirements summary manually if you want to bypass intake.
+```
+
+End the invocation with `Outcome: BLOCKED`.
+
+The repo-identification check in Step 1b is the **secondary** gate — if the requirements
+implicate zero of the configured repos, Step 1b bounces back with the same message
+shape. This Step 0a check only verifies the inputs are non-trivial, not that they map
+to a specific repo.
+
 ### 0. Design Approach Selection
 
 Before decomposing into tasks, propose 2-3 architectural approaches. For each approach provide:
@@ -425,6 +468,81 @@ Display the full plan — including the Test Outline and the Test Pattern Refere
 > *Patterns are filename-glob suggestions. If any look irrelevant, strike them — empty pattern lists are fine; the Tester will fall back to framework defaults.*
 
 Do NOT proceed until receiving approval.
+
+## Phase 7 Amendment Mode (`MODE: pr-response-tasks`)
+
+When the orchestrator invokes this skill with `MODE: pr-response-tasks` (from
+`skills/dev-workflow/commands/review-response.md` Step 7 after PR review comments
+have been classified VALID/PARTIAL and accepted at GATE #4), the skill operates in
+**amendment mode** instead of producing a fresh plan.
+
+### What changes in amendment mode
+
+- **Skip Step 0a** (the minimum-input gate) and Step 0 (Design Approach Selection).
+  The plan and tracker already exist; design approach was settled in the original
+  Phase 2 run.
+- **Skip Step 1** (pre-flight check for prior session work). Existing tracker is
+  the input, not a discovery target.
+- **Skip Step 7's "Create Task Tracker"** for a fresh file. Open and modify the
+  **existing** tracker referenced in the orchestrator's prompt.
+- **Skip Step 8** (HUMAN GATE #1). The human already gated this batch of tasks at
+  GATE #4 in `review-response.md`. The amendment write-back must be silent.
+
+### What stays the same
+
+- Step 1b — re-read `repos-metadata.md` and verify each new task's `Repo` value
+  resolves to a configured repo.
+- Step 5 (Test Outline) — every amendment task with `test-required: true` must
+  have a corresponding Test Outline entry appended to the plan file under a new
+  `## Test Outline — PR Review Round N` heading. Follow the existing
+  `Subject_Scenario_Outcome` naming convention.
+- Step 5b (Test Pattern References) — applies to amendment tasks too. Append to
+  the existing pattern-references section keyed by the new Task IDs.
+- Step 6 (Mermaid diagrams) — regenerate the **Dependency Graph** in the tracker
+  to include the new tasks (per the existing rendering rules above). Amendment
+  tasks typically have no `depends:` token because they originate from PR
+  feedback rather than the original DAG, so they appear as root nodes with the
+  implicit Phase 5 edge into `T-TEST-<RepoName>`.
+
+### Amendment row template
+
+Append new task rows under a new `## Amendments (PR Review Round N)` heading
+**below** the existing task table — do NOT reorder, edit, or remove any existing
+rows. Existing rows record history (commits, verdicts, completion timestamps);
+mutating them would corrupt the trail.
+
+The amendment heading uses the round number passed by the orchestrator (`Round 1`
+on the first Phase 7 invocation, `Round 2` on a second round of PR comments, etc).
+
+Tracker format for amendment rows — identical column schema as the original
+table:
+
+```markdown
+## Amendments (PR Review Round <N>)
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T<next-n> | <repo-name> | <≤ 60-char title> | ⏳ Pending | — | — | PR-comment: [PC-<n>] thread_id=<provider-thread-id> · test-required: <true|false> |
+```
+
+The `Notes` column **must** include the `PR-comment: [PC-<n>] thread_id=<...>`
+token so `review-response.md` Step 9 can later post replies on the original
+threads. The `thread_id` value is the REST integer comment ID for inline review
+threads or `general:<comment-id>` for top-level PR comments (per
+`skills/providers/<git-provider>/pr-comments.md`).
+
+### Task ID continuation
+
+Identify the highest existing Task ID in the original table (e.g. if the last
+dev task is `T5`, the first amendment task is `T6`). T-TEST-`<RepoName>` rows
+are not part of the dev-task sequence and are not assigned to amendment tasks —
+amendment tasks reuse the existing T-TEST-`<RepoName>` row for their repo's
+Phase 5 hardening (it remains the single Phase 5 anchor per repo across rounds).
+
+### Status transitions
+
+Every amendment row MUST start in `⏳ Pending`. The `tracker-transition-guard`
+hook enforces this — appending a row already in `✅ Done` is rejected.
 
 ## Rules
 
