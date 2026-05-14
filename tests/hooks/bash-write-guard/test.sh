@@ -221,4 +221,41 @@ EOF'
         "$(mk_bash_payload "$cmd")"
 }
 
+# ── Path normalisation: relative-traversal loophole ─────────────────────────
+
+test_block_dotdot_traversal_to_ai() {
+    # `foo/../ai/tasks/x.md` normalises to `ai/tasks/x.md` — must block.
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload 'echo x > foo/../ai/tasks/x.md')" \
+        "harness-owned path"
+}
+
+test_block_dotdot_traversal_to_sensitive() {
+    # `bar/../.env` normalises to `.env` — must block.
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload 'echo x > bar/../.env')" \
+        "sensitive file"
+}
+
+# ── Path normalisation: symlink resolution ──────────────────────────────────
+
+test_block_symlink_into_ai() {
+    # Set up a symlink whose name looks innocent but points into ai/.
+    mkdir -p "$FAKE_WORKSPACE/ai/tasks"
+    : > "$FAKE_WORKSPACE/ai/tasks/real.md"
+    ln -s "$FAKE_WORKSPACE/ai/tasks/real.md" "$FAKE_WORKSPACE/innocent.md"
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload "echo x > $FAKE_WORKSPACE/innocent.md")" \
+        "harness-owned path"
+}
+
+test_block_symlink_to_sensitive() {
+    # Symlink with an innocent basename pointing at a sensitive target.
+    : > "$FAKE_WORKSPACE/.env"
+    ln -s "$FAKE_WORKSPACE/.env" "$FAKE_WORKSPACE/notes.txt"
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload "echo SECRET=1 > $FAKE_WORKSPACE/notes.txt")" \
+        "sensitive file"
+}
+
 run_all_tests

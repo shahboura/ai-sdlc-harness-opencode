@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import os
+import os.path
 import re
 import shlex
 import sys
@@ -78,28 +79,80 @@ def _is_redirect_token(token: str) -> tuple[bool, str | None]:
     return False, None
 
 
-def _normalize_path(p: str) -> str:
-    """Strip quotes, leading `./`, trailing slashes. Lowercase basename for
-    pattern matching. Returns the path as-given (still potentially relative)."""
-    p = p.strip().strip('"').strip("'")
-    if p.startswith("./"):
-        p = p[2:]
+def _strip_quotes(p: str) -> str:
+    """Strip outer matching quotes (single or double) once."""
+    p = p.strip()
+    if len(p) >= 2 and p[0] == p[-1] and p[0] in {'"', "'"}:
+        p = p[1:-1]
     return p
 
 
+def _normalize_path(p: str) -> str:
+    """Strip quotes and collapse `.`/`..` segments via `os.path.normpath`.
+
+    The result is still potentially relative — callers that need to compare
+    against an absolute location should resolve via `_resolve_target`.
+    `os.path.normpath` flattens `foo/../ai/bar` to `ai/bar`, closing the
+    relative-traversal loophole that a literal substring check misses.
+    """
+    p = _strip_quotes(p)
+    if not p:
+        return p
+    # `os.path.normpath` collapses `.`, `..`, and redundant separators.
+    # It does NOT touch the filesystem, so it's safe and fast.
+    return os.path.normpath(p)
+
+
+def _resolve_target(path: str) -> str:
+    """Resolve a write target to its real on-disk location, dereferencing
+    symlinks along the way (`os.path.realpath`).
+
+    Falls back to the normalised path on any error so the guard never
+    silently drops a violation. Used by the protected-prefix checks to
+    close the symlink loophole: `ln -s ai/tasks/x.md fake && tee fake`
+    would otherwise look like a write to `fake`.
+    """
+    norm = _normalize_path(path)
+    if not norm:
+        return norm
+    try:
+        # `realpath` returns an absolute path. It also resolves symlinks
+        # for any ancestor that already exists; missing tail components
+        # are passed through unchanged, so non-existent targets still
+        # produce a sensible absolute string we can pattern-match.
+        return os.path.realpath(norm)
+    except (OSError, ValueError):
+        return norm
+
+
 def _is_under_ai(path: str) -> bool:
-    p = _normalize_path(path)
-    if p == "ai" or p.startswith("ai/"):
-        return True
-    if "/ai/" in p:
-        # Absolute paths into a workspace's ai/ — e.g. /tmp/x/ai/foo
-        # We don't know the workspace root; treat as protected.
-        return True
+    """True if `path` (or what it resolves to) lives under an `ai/` directory.
+
+    Checks both the as-given normalised path and the realpath-resolved
+    location, so `ln -s ai/tasks/foo fake && tee fake` is still flagged.
+    """
+    candidates = {_normalize_path(path), _resolve_target(path)}
+    for p in candidates:
+        if not p:
+            continue
+        if p == "ai" or p.startswith("ai/"):
+            return True
+        if "/ai/" in p:
+            # Absolute paths into a workspace's ai/ — e.g. /tmp/x/ai/foo.
+            # We don't know the workspace root; treat as protected.
+            return True
     return False
 
 
 def _matches_sensitive(path: str) -> bool:
-    return _matches_sensitive_basename(_normalize_path(path))
+    """Match the basename of `path` (and its realpath) against the sensitive
+    deny-list. Resolving symlinks closes the
+    `ln -s id_rsa innocent && tee innocent` bypass.
+    """
+    for p in (_normalize_path(path), _resolve_target(path)):
+        if p and _matches_sensitive_basename(p):
+            return True
+    return False
 
 
 def _extract_write_targets(cmd: str) -> list[tuple[str, str]]:

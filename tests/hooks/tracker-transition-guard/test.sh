@@ -171,6 +171,62 @@ test_allow_write_new_tracker() {
         "$(mk_write_payload "$FAKE_WORKSPACE/ai/tasks/brand-new.md" "$content")"
 }
 
+# ── New rows added to an existing tracker ───────────────────────────────────
+
+test_block_edit_inserts_new_row_already_done() {
+    # Pre-existing tracker has T1 only. An Edit appends a brand-new T99 row
+    # already marked ✅ Done — bypassing the entire workflow. Must block.
+    local path
+    path="$(write_fixture 'ai/tasks/x.md' "$(mk_tracker '🔧 In Progress')")"
+    local before='| T2  | Second task | repoA | ⏳ Pending | --    |'
+    local after='| T2  | Second task | repoA | ⏳ Pending | --    |
+| T99 | Sneaky task | repoA | ✅ Done | --    |'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_edit_payload "$path" "$before" "$after")" \
+        "T99"
+}
+
+test_block_edit_inserts_new_row_in_progress() {
+    # Same loophole, but the new row is "🔧 In Progress" — still illegal.
+    local path
+    path="$(write_fixture 'ai/tasks/x.md' "$(mk_tracker '⏳ Pending')")"
+    local before='| T2  | Second task | repoA | ⏳ Pending | --    |'
+    local after='| T2  | Second task | repoA | ⏳ Pending | --    |
+| T99 | New task | repoA | 🔧 In Progress | --    |'
+    assert_hook_blocks "$HOOK" \
+        "$(mk_edit_payload "$path" "$before" "$after")" \
+        "T99"
+}
+
+test_allow_edit_inserts_new_row_pending() {
+    # Phase 7: planner adds new task rows for accepted PR comments. They must
+    # start as ⏳ Pending — and that's the legitimate path.
+    local path
+    path="$(write_fixture 'ai/tasks/x.md' "$(mk_tracker '✅ Done')")"
+    local before='| T2  | Second task | repoA | ⏳ Pending | --    |'
+    local after='| T2  | Second task | repoA | ⏳ Pending | --    |
+| T-PR-1 | PR comment fix | repoA | ⏳ Pending | --    |'
+    assert_hook_allows "$HOOK" "$(mk_edit_payload "$path" "$before" "$after")"
+}
+
+test_block_write_replaces_with_new_done_row() {
+    # Whole-file Write that adds a new task row already marked ✅ Done.
+    local path
+    path="$(write_fixture 'ai/tasks/x.md' "$(mk_tracker '🔧 In Progress' '🔧 In Progress')")"
+    local new_content
+    new_content="# Story Tracker
+
+| ID  | Description | Repo  | Status              | Notes |
+|-----|-------------|-------|---------------------|-------|
+| T1  | First task  | repoA | 🔧 In Progress | --    |
+| T2  | Second task | repoA | 🔧 In Progress | --    |
+| T99 | Sneaky task | repoA | ✅ Done | --    |
+"
+    assert_hook_blocks "$HOOK" \
+        "$(mk_write_payload "$path" "$new_content")" \
+        "T99"
+}
+
 # ── Metadata-only edits should pass ─────────────────────────────────────────
 
 test_allow_notes_column_edit() {

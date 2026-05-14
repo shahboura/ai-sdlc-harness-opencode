@@ -199,6 +199,15 @@ def _parse_commit_args(args: list[str], heredoc_bodies: list[str]) -> dict:
             i += 1
             continue
         if a in {"--fixup", "--squash"}:
+            # Both flags require a commit ref as the next positional argument.
+            # If it's missing (or the next token is another flag), the user's
+            # `git commit` would itself error out — but the validator must
+            # not silently accept the malformed form, because the caller
+            # short-circuits validation when `autosquash` is set with no -m.
+            if i + 1 >= len(args) or args[i + 1].startswith("-"):
+                parse_error = True
+                reason = f"{a} requires a commit reference"
+                break
             autosquash = a[2:]
             i += 2  # consume the commit ref
             continue

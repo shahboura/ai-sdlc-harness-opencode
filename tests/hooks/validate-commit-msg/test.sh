@@ -34,6 +34,37 @@ test_allow_autosquash_fixup() {
     assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit --fixup HEAD~1')"
 }
 
+test_allow_autosquash_squash() {
+    assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit --squash abc1234')"
+}
+
+test_allow_autosquash_fixup_equals_form() {
+    assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit --fixup=HEAD~1')"
+}
+
+test_block_fixup_without_ref() {
+    # `--fixup` requires a commit reference. Without one, the parser used to
+    # consume the next two slots blindly and skip validation entirely; now
+    # the missing ref must surface as a parse error and block the commit.
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload 'git commit --fixup')" \
+        "could not parse"
+}
+
+test_block_squash_without_ref() {
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload 'git commit --squash')" \
+        "could not parse"
+}
+
+test_block_fixup_followed_by_flag_only() {
+    # `--fixup -m "..."` — the next token is a flag, so no ref was supplied.
+    # Must also block (and not silently treat `-m` as the ref).
+    assert_hook_blocks "$HOOK" \
+        "$(mk_bash_payload 'git commit --fixup -m "anything"')" \
+        "could not parse"
+}
+
 test_allow_fixup_subject_literal() {
     assert_hook_allows "$HOOK" "$(mk_bash_payload 'git commit -m "fixup! #123 #T1: prior subject"')"
 }

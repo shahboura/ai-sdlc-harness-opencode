@@ -4,6 +4,7 @@
 Validates that every status change in a tracker edit follows the legal
 transition graph:
 
+    (new row)      → ⏳ Pending        (added to an existing tracker)
     ⏳ Pending     → 🔧 In Progress
     🔧 In Progress → 🔄 In Review
     🔄 In Review   → ✅ Done           (reviewer approved)
@@ -15,6 +16,12 @@ on-disk file content, then diffs task-row statuses by task ID and validates
 every transition that actually changed. Same-status edits and metadata-only
 column changes (Notes, Commit hashes, Reviewer Verdict, timestamps) pass
 through silently.
+
+New rows added to an existing tracker must start in ⏳ Pending. Rows that
+appear in non-pending status without going through the proper lifecycle are
+rejected (closes the "create a row already marked Done" loophole). When the
+tracker file does not yet exist on disk (initial Write), there is no
+pre-state to compare against and the write passes through.
 
 Reads the hook payload file path from argv[1].
 
@@ -47,6 +54,7 @@ _LABEL = {
     "in_progress": "🔧 In Progress",
     "in_review": "🔄 In Review",
     "done": "✅ Done",
+    "NONE": "(new row)",
 }
 
 _TRACKER_PATH_RE = re.compile(r"(^|/)ai/tasks/")
@@ -135,7 +143,12 @@ def _violations(before: dict[str, str], after: dict[str, str]) -> list[tuple[str
     for task_id, new_status in after.items():
         old_status = before.get(task_id)
         if old_status is None:
-            continue  # new row, no transition
+            # New row added to an existing tracker. The only legal initial
+            # status is ⏳ Pending — every other state implies workflow
+            # progress that must go through the proper transitions.
+            if new_status != "pending":
+                out.append((task_id, "NONE", new_status))
+            continue
         if old_status == new_status:
             continue
         if new_status not in _LEGAL.get(old_status, set()):
@@ -186,6 +199,7 @@ def main() -> int:
         print(f"  - {tid}: {_LABEL[old]} → {_LABEL[new]}", file=sys.stderr)
     print("", file=sys.stderr)
     print("Legal transitions:", file=sys.stderr)
+    print("  (new row)      → ⏳ Pending        (added to an existing tracker)", file=sys.stderr)
     print("  ⏳ Pending     → 🔧 In Progress", file=sys.stderr)
     print("  🔧 In Progress → 🔄 In Review", file=sys.stderr)
     print("  🔄 In Review   → ✅ Done           (reviewer approved)", file=sys.stderr)
