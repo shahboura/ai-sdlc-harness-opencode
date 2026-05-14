@@ -332,11 +332,11 @@ Before writing the tracker, run `date -u +"%Y-%m-%d %H:%M UTC"` and use the outp
 
 **CRITICAL**: Use this EXACT column schema. Do NOT invent, rename, remove, or reorder columns. Every tracker row must have exactly 7 pipe-separated columns.
 
-**Dependency Graph rendering rules** (populates the `## Dependency Graph` section in the
-Format block below). The graph is a static visual companion to the task table — status is
-NOT encoded; the table is the single source of truth for status. The graph is regenerated
-only when Phase 7 (PR review response) adds new tasks; the orchestrator never modifies it
-mid-workflow.
+**REQUIRED: After the task table you MUST write a `## Dependency Graph` section** containing a Mermaid `flowchart LR`. This section is mandatory for every story — single-repo and multi-repo alike. Do NOT skip it or omit it under any circumstances.
+
+The graph is a static visual companion to the task table — status is NOT encoded; the table is the single source of truth for status. The graph is regenerated only when Phase 7 (PR review response) adds new tasks; the orchestrator never modifies it mid-workflow.
+
+**Dependency Graph rendering rules:**
 
 1. **Direction:** `flowchart LR` — left-to-right reads as execution order (dependencies on
    the left, dependents on the right).
@@ -393,6 +393,7 @@ Column definitions:
 ---
 
 ## Dependency Graph
+<!-- REQUIRED — always present; generated from task `depends:` tokens + implicit T-TEST edges -->
 
 ```mermaid
 flowchart LR
