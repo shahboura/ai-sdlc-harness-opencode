@@ -103,7 +103,14 @@ Then present the gate:
 
 All repos reviewed. Ready to create PR(s).
 
-Type APPROVED to proceed, or describe any changes you want made first.
+Options:
+  [1] APPROVED — open the PR(s) for review and merge as normal.
+  [2] DRAFT — open the PR(s) in draft state. The harness's internal review is
+      complete, but the PR is intentionally not yet open for external team review
+      (e.g. waiting on a dependent PR in another repo, or on out-of-band sign-off).
+  [3] CHANGES — describe changes you want made first.
+
+Type 1, 2, or describe the changes for option 3.
 ```
 
 **If any repo has `❌ CHANGES REQUESTED`:**
@@ -169,7 +176,18 @@ Repeat until the human approves or explicitly overrides.
 
 ### Step 5 — HUMAN GATE #3
 
-Once the human types `APPROVED` (or chooses to proceed despite issues):
+Capture the human's choice from the multi-choice prompt in Step 3 and map it to
+a `PR_MODE` value that will be passed into `pr-creator`:
+
+| Human chose | PR_MODE |
+|-------------|---------|
+| `1` / `APPROVED` | `standard` |
+| `2` / `DRAFT` | `draft` |
+| `3` / changes described | (re-enter Step 4 fix loop; do not proceed) |
+
+Hold `PR_MODE` in orchestrator state; it flows into the pr-creator invocation in Step 7.
+
+Once the gate is cleared (option 1 or 2), proceed to Step 6.
 
 ### Step 6 — Commit the Task Tracker
 
@@ -222,16 +240,22 @@ The tracker and plan now travel with the feature branch. All Step 9 amend operat
 
 ### Step 7 — Create PRs (One Per Repo)
 
-For each affected repo, use the **pr-creator** skill:
+For each affected repo, invoke the **pr-creator** skill with the `PR_MODE` selected at
+GATE #3. Include the mode as an explicit context block in the invocation:
 
 ```
 /pr-creator $ARGUMENTS <team-name> <repo-name>
+
+PR_MODE: <standard | draft>
 ```
 
 The pr-creator will:
-1. Push the repo's feature branch to the remote
-2. Create the PR/MR via the configured git provider
-3. Link the PR/MR to the work item via the configured work item provider
+1. Run Step 0 idempotency check — query `pr.find_for_branch`; if an open PR exists,
+   surface the reuse/fail prompt before any push.
+2. Push the repo's feature branch to the remote.
+3. Create the PR/MR via the configured git provider (passing `--draft` / `draft: true`
+   when `PR_MODE: draft`).
+4. Link the PR/MR to the work item via the configured work item provider.
 
 ### Step 8 — Cross-Reference PRs (Multi-Repo Only)
 

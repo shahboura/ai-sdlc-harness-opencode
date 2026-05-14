@@ -6,7 +6,7 @@ description: >
   creates the PR/MR via the configured git provider. Links back to the work item
   via the work item provider. Supports ADO, GitLab, GitHub, and Jira.
   Used during Phase 6 of the workflow.
-allowed-tools: Bash, Read, Grep, Glob, mcp__azure-devops__*, mcp__jira__*, mcp__gitlab__*, mcp__github__*, mcp__zoho__*
+allowed-tools: Bash, Read, Grep, Glob, mcp__azure-devops__*, mcp__jira__*, mcp__gitlab__*, mcp__github__*
 argument-hint: "[Work-Item-ID] [team-name] [repo-name]"
 ---
 
@@ -43,8 +43,74 @@ provider.
 3. If any task is not done, **STOP** and report which tasks remain.
 4. **If repo name provided** (`$ARGUMENTS[2]`): read `.claude/context/repos-paths.md`
    to resolve the repo name to a local path. All git commands below use `git -C <repo-path>`.
+5. **Read `.claude/context/repos-metadata.md`** and resolve the **Default Branch** for the
+   repo. Pass this as `<default-branch>` into every step below — do NOT assume `main`.
+
+## Context Block (read from caller)
+
+The orchestrator (`create-pr.md` Step 7) passes a PR_MODE context block. Read it before
+Step 0:
+
+```
+PR_MODE: <standard | draft>
+```
+
+- `standard` (default) — open a normal, review-ready PR.
+- `draft` — open the PR in draft state. The harness's internal Phase 6 review has already
+  passed; `draft` signals to the team that external review / merge is intentionally
+  deferred (e.g. waiting on a dependent PR in another repo, or on out-of-band sign-off).
+
+If the context block is absent, treat as `standard`.
 
 ## Steps
+
+### 0. Idempotency Check (Find Existing PR for the Branch)
+
+Before any `git push`, query the git provider for an open PR/MR on this branch via the
+adapter's `pr.find_for_branch` capability
+(see `skills/providers/<git-provider>/pr-comments.md` for the canonical primitive — it is
+shared between Phase 6 and Phase 7).
+
+```bash
+# GitHub example (gh-cli / github adapters):
+gh pr list \
+  --repo <owner>/<repo> \
+  --head <feature-branch> \
+  --state open \
+  --json number,url,isDraft \
+  --limit 1
+```
+
+If the adapter declares `pr.find_for_branch: ❌` (the provider has no path to look up by
+branch), record `Idempotency check: skipped (capability unavailable)` and proceed to
+Step 1 — the workflow falls back to the provider's natural rejection of duplicate PRs
+on push.
+
+**If an open PR/MR is returned:**
+
+Present to the human:
+
+```
+## Existing PR/MR Detected
+
+An open <PR | MR> already exists for branch `<feature-branch>`:
+- URL: <url>
+- Number: #<number>
+- State: <open | draft>
+
+Options:
+  [1] Reuse — record the existing URL in the tracker and skip PR creation (push will
+      still happen below if local commits are ahead of remote).
+  [2] Fail — stop this invocation. Manual investigation needed (e.g. close the existing
+      PR or force-push intentionally).
+
+What would you like to do?
+```
+
+Wait for the response. **Do not** auto-pick; the human picks because the existing PR may
+carry review comments, reviewers, or CI runs the orchestrator can't see. On `[1]`, skip
+Step 6 entirely and proceed to Step 7 with the existing PR's metadata. On `[2]`, exit
+without making any changes.
 
 ### 1. Validate Branch Name
 
@@ -112,9 +178,35 @@ Verify the push succeeded before proceeding. If it fails, report the error and s
 
 **Note:** `git push` is not pre-approved — the user will be prompted to confirm.
 
+#### Auth-failure copy
+
+If `git push` fails with an authentication error (HTTP 401/403, "Permission denied",
+`could not read Username`, `gh: not authenticated`), surface this to the human verbatim:
+
+```
+PR creation blocked by an authentication failure on `git push`.
+
+The git provider's adapter at `skills/providers/<git-provider>/pull-requests.md`
+documents the auth prerequisites — re-check the **Prerequisites** section. Common
+fixes:
+  - GitHub (gh-cli / github): run `gh auth status`; re-authenticate via `gh auth login`
+    if the session has expired.
+  - ADO / GitLab MCP: confirm the configured PAT has not been revoked or rotated.
+
+Re-run `/dev-workflow create-pr <story>` after the auth is restored. The
+idempotency check in Step 0 will pick up where this run left off (no duplicate
+PR will be created).
+```
+
 ### 6. Create the PR / MR
 
-Use the **git provider adapter** for the exact tool and parameters.
+Use the **git provider adapter** for the exact tool and parameters. If Step 0 returned an
+existing PR and the human chose `[1] Reuse`, **skip this step entirely** and pass the
+existing URL/number forward to Step 7.
+
+**Draft mode:** when `PR_MODE: draft` was passed by the orchestrator, set the draft flag
+on the create call as documented per adapter below. The PR/MR is still created and the
+work-item link in Step 7 still fires — only the review state changes.
 
 #### ADO
 ```
@@ -124,7 +216,8 @@ mcp__azure-devops__repo_create_pull_request(
   sourceRefName="refs/heads/<branch>",     # ADO requires refs/heads/ prefix
   targetRefName="refs/heads/<default>",
   title="<ID-DISPLAY>: <summary>",
-  description=<PR-body>
+  description=<PR-body>,
+  isDraft=<true if PR_MODE=draft else false>
 )
 ```
 
@@ -136,9 +229,13 @@ mcp__gitlab__create_merge_request(
   targetBranch="<default>",
   title="<ID-DISPLAY>: <summary>",
   description=<MR-body>,                   # Include "Closes #IID" if GitLab is also WI provider
-  removeSourceBranch=true
+  removeSourceBranch=true,
+  draft=<true if PR_MODE=draft else false>
 )
 ```
+
+GitLab also accepts a leading `Draft:` prefix in the title as an alternative — the
+`draft` parameter is the canonical path.
 
 #### GitHub
 ```
@@ -148,7 +245,8 @@ mcp__github__create_pull_request(
   head="<branch>",                         # No prefix needed
   base="<default>",
   title="<ID-DISPLAY>: <summary>",
-  body=<PR-body>                           # Include "Closes #NUMBER" if GitHub is also WI provider
+  body=<PR-body>,                          # Include "Closes #NUMBER" if GitHub is also WI provider
+  draft=<true if PR_MODE=draft else false>
 )
 ```
 
@@ -160,7 +258,8 @@ glab mr create \
   --target-branch <default> \
   --title "<ID-DISPLAY>: <summary>" \
   --description "<MR-body>" \
-  --remove-source-branch
+  --remove-source-branch \
+  [--draft]   # include only when PR_MODE: draft
 # MR URL is printed to stdout — capture and record it in the tracker
 ```
 
@@ -174,7 +273,8 @@ gh pr create \
   --head <branch> \
   --base <default> \
   --title "<ID-DISPLAY>: <summary>" \
-  --body "<PR-body>"
+  --body "<PR-body>" \
+  [--draft]   # include only when PR_MODE: draft
 # PR URL is printed to stdout — capture and record it in the tracker
 ```
 
