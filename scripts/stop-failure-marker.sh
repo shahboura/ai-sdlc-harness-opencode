@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Hook: stop-failure-marker
+# Event: StopFailure
+# Matcher: ""
+# Policy: fail-open
+# Enforces: writes .claude/context/.stop-failure marker on turn-end-with-failure so the next prompt can route to recovery.
+# Reads context from: workspace walk-up
+# Writes side-effects to: .claude/context/.stop-failure
 # ---
 # name: stop-failure-marker
 # event: StopFailure
@@ -14,6 +21,10 @@
 #
 #   Uses workspace walk-up (not cwd) so the marker is written even if the
 #   orchestrator changed directory before the failure.
+#
+# Updated by: dev-workflow-plan.md [M-08] [IMPL-08-04]
+# Reason: Add canonical CC-03.8 header block (Hook/Event/Matcher/Policy/Enforces/Reads/Writes) per TEST-49.
+# CC conventions applied: CC-03.2 (fail-open declared), CC-03.8 (canonical header block).
 # ---
 set -uo pipefail
 

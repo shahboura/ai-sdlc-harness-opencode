@@ -62,6 +62,39 @@ assert_contains 'PATTERN_HINTS_CTX from the plan' 'tester prompt includes PATTER
 assert_contains 'if [ -z "$UID8" ]; then' 'develop.md hard-fails when UID8 is empty'
 assert_contains 'UID8 generation failed' 'develop.md surfaces the UID8-failure cause to the human'
 
+# B1 — WORKTREE_PATH must carry the UID8 suffix so a crashed-mid-task
+# session can resume without colliding with the orphan worktree on disk.
+assert_contains 'WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>-${UID8}"' \
+    'WORKTREE_PATH includes UID8 (post-crash resume safety)'
+# Negative — the pre-B1 path shape without UID8 must not reappear.
+assert_not_contains 'WORKTREE_PATH="<REPO_PATH>/../worktrees/<repo-name>-t<n>"' \
+    'pre-B1 path shape (no UID8) is gone'
+
+# A3 — worktree-failed fallback handling for squash-merge.
+# In worktree mode the orchestrator uses `git merge --squash <worktree-branch>`;
+# in fallback mode there is no worktree branch and it must use
+# `git reset --soft <feature_head>` followed by a fresh commit instead.
+# Both paths must be documented; if either disappears the fallback regresses.
+assert_contains 'Worktree mode (`worktree_failed: false`):' 'Step 4 documents the worktree-mode squash path'
+assert_contains 'Fallback mode (`worktree_failed: true`):' 'Step 4 documents the fallback-mode squash path'
+assert_contains 'git -C "$REPO_PATH" reset --soft' 'Step 4 fallback uses git reset --soft'
+assert_contains 'feature_head from lane' 'Step 4 fallback references the cached feature_head'
+# Lane state must persist feature_head so the fallback squash can find it.
+assert_contains '`feature_head`' 'lane state persists feature_head'
+# Cleanup step must be worktree-only — the fallback has no worktree to remove.
+assert_contains '# Worktree mode only:' 'Step 4 cleanup is gated on worktree mode'
+
+# A3 — CHANGES_REQUESTED rework prompts must honour the worktree_failed flag
+# (previously they always inlined WORKTREE_CTX, which broke fallback mode).
+# The doc must contain the conditional include line *somewhere* — covers
+# both the initial-launch tester/developer and the rework re-invocations.
+if [ "$(grep -cF 'Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`' "$FILE")" -ge 4 ]; then
+    _pass 'rework prompts also use the WORKTREE_CTX / REPO_CTX conditional'
+else
+    _fail 'rework prompts also use the WORKTREE_CTX / REPO_CTX conditional' \
+        'expected at least 4 occurrences (2 initial-launch + 2 rework re-invocation)'
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
     printf '\nFailures:\n' >&2

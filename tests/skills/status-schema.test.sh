@@ -16,13 +16,19 @@ _pass() { pass=$((pass + 1)); printf '  ok    %s\n' "$1"; }
 _fail() { fail=$((fail + 1)); fail_msgs+=("$1: $2"); printf '  FAIL  %s\n' "$1" >&2; printf '        %s\n' "$2" >&2; }
 
 # All agent files must reference the schema so renames stay synchronised.
+# The canonical workspace-relative path is `.claude/context/agents-shared/status-schema.md`
+# (since CLAUDE_PLUGIN_ROOT isn't exposed to the agent runtime, the schema is
+# mirrored from the plugin into the workspace by init-workspace Step 6c). The
+# legacy plugin-source path `agents/shared/status-schema.md` is also accepted
+# for grep purposes — both point at the same content.
 _assert_references_schema() {
     local label="$1"
     local file="$2"
-    if grep -qF 'agents/shared/status-schema.md' "$file"; then
+    if grep -qF 'agents-shared/status-schema.md' "$file" \
+        || grep -qF 'agents/shared/status-schema.md' "$file"; then
         _pass "$label references status-schema.md"
     else
-        _fail "$label references status-schema.md" "no mention of agents/shared/status-schema.md"
+        _fail "$label references status-schema.md" "no mention of agents-shared/status-schema.md or agents/shared/status-schema.md"
     fi
 }
 
@@ -82,6 +88,13 @@ _assert_field_present 'planner block' "$REPO_ROOT/agents/planner/index.md" 'Plan
 _assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Agent'
 _assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Worktree branch'
 _assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Commit'
+_assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Build result'
+_assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Build attempts'
+_assert_field_present 'developer block' "$REPO_ROOT/agents/developer/index.md" 'Self-review'
+# Drift catcher: A2 renamed `Build:` → `Build result:` on Developer. The old
+# field name must not reappear as a status-block declaration.
+_assert_field_absent  'developer'       "$REPO_ROOT/agents/developer/index.md" 'Build'
+_assert_field_absent  'developer'       "$REPO_ROOT/agents/developer/index.md" 'Tests'
 
 # Tester: rename complete, Mode declared, no `test_commit` anywhere.
 _assert_field_present 'tester block'  "$REPO_ROOT/agents/tester/index.md" 'Agent'
@@ -103,6 +116,23 @@ fi
 _assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md"               'Verdict'
 _assert_field_present 'reviewer Phase 6 block'   "$REPO_ROOT/agents/reviewer/pre-pr.md"              'Verdict'
 _assert_field_present 'reviewer Phase 7 block'   "$REPO_ROOT/agents/reviewer/pr-comment-analysis.md" 'Verdict'
+
+# Reviewer Phase 3/5 block — A2 canonicalised the build/test field names.
+_assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md" 'Build verified'
+_assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md" 'Tests verified'
+_assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md" 'Spec compliance'
+_assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md" 'Code quality verdict'
+_assert_field_present 'reviewer Phase 3/5 block' "$REPO_ROOT/agents/reviewer/index.md" 'Review comments'
+# Pre-A2 short names must not reappear as field declarations.
+_assert_field_absent  'reviewer Phase 3/5'       "$REPO_ROOT/agents/reviewer/index.md" 'Build'
+_assert_field_absent  'reviewer Phase 3/5'       "$REPO_ROOT/agents/reviewer/index.md" 'Tests'
+
+# Tester auto-harden — A2 made these required so workflow-status / orchestrator
+# can read coverage / attempt counts straight from the block.
+_assert_field_present 'tester block' "$REPO_ROOT/agents/tester/index.md" 'Coverage'
+_assert_field_present 'tester block' "$REPO_ROOT/agents/tester/index.md" 'Tests written'
+_assert_field_present 'tester block' "$REPO_ROOT/agents/tester/index.md" 'Tests passing'
+_assert_field_present 'tester block' "$REPO_ROOT/agents/tester/index.md" 'Test attempts'
 
 # --- 3. engineering-principles.md has no agent-style frontmatter. ----------
 if head -1 "$REPO_ROOT/agents/shared/engineering-principles.md" | grep -q '^---$'; then

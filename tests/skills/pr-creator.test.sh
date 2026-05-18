@@ -112,6 +112,64 @@ else
         'expected Step 5 to declare the choice → PR_MODE mapping (standard / draft)'
 fi
 
+# C4 — pr-creator declares a `Reuse:` output flag so the caller can branch
+# its Step 9 path. Without it, create-pr.md's amend+force-push fires on a
+# reused-PR run, producing force-push noise on the existing PR.
+if grep -qF -- 'Reuse: <true | false>' "$PR_CREATOR"; then
+    _pass 'pr-creator declares the Reuse: output flag'
+else
+    _fail 'pr-creator declares the Reuse: output flag' \
+        'expected to find: Reuse: <true | false>'
+fi
+if grep -qF -- 'consumed by `commands/create-pr.md` Step 9 to decide between' "$PR_CREATOR"; then
+    _pass 'pr-creator documents Step 9 as the consumer of the Reuse: flag'
+else
+    _fail 'pr-creator documents Step 9 as the consumer' \
+        'expected to find the create-pr.md Step 9 cross-reference in pr-creator'
+fi
+
+# D4 — the Reuse: output must be emitted inside a literal terminator block
+# so the orchestrator-side parser has a deterministic anchor. Without the
+# terminator, the LLM running pr-creator could bury `Reuse:` mid-prose and
+# the parser in create-pr.md Step 9 would miss it.
+if grep -qF -- '--- PR CREATOR RESULT ---' "$PR_CREATOR"; then
+    _pass 'pr-creator declares the `--- PR CREATOR RESULT ---` terminator block'
+else
+    _fail 'pr-creator declares the terminator block' \
+        'expected `--- PR CREATOR RESULT ---` as the parser anchor for the output contract'
+fi
+if grep -qF -- 'parser anchor' "$PR_CREATOR"; then
+    _pass 'pr-creator names the terminator as the parser anchor'
+else
+    _fail 'pr-creator names the terminator as the parser anchor' \
+        'expected explicit "parser anchor" rationale in pr-creator'
+fi
+
+# C4 — create-pr.md Step 9 branches on the Reuse: flag.
+if grep -qF -- "#### Create path (\`Reuse: false\`) — amend + force-push" "$CREATE_PR"; then
+    _pass 'create-pr Step 9 declares the create path (amend + force-push)'
+else
+    _fail 'create-pr Step 9 declares the create path' 'expected #### Create path heading'
+fi
+if grep -qF -- "#### Reuse path (\`Reuse: true\`) — fresh commit + fast-forward push" "$CREATE_PR"; then
+    _pass 'create-pr Step 9 declares the reuse path (fresh commit + fast-forward)'
+else
+    _fail 'create-pr Step 9 declares the reuse path' 'expected #### Reuse path heading'
+fi
+if grep -qF -- "Set the metric only if it's still \`—\`" "$CREATE_PR"; then
+    _pass 'create-pr Step 9 reuse path preserves an already-set PR created timestamp'
+else
+    _fail 'create-pr Step 9 reuse path preserves an already-set PR created timestamp' \
+        "expected the metric-preservation rule in Step 9's reuse branch"
+fi
+# The reuse path's commit subject must match the validator regex.
+if grep -qF -- '#<STORY-ID> #TTRACKER: record PR created timestamp on reuse' "$CREATE_PR"; then
+    _pass 'create-pr Step 9 reuse path uses a #TTRACKER commit subject'
+else
+    _fail 'create-pr Step 9 reuse path uses a #TTRACKER commit subject' \
+        'expected the reuse-path commit subject in create-pr.md Step 9'
+fi
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 if [ "$fail" -gt 0 ]; then
     printf '\nFailures:\n' >&2

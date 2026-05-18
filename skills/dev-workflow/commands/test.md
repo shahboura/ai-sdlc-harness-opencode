@@ -1,5 +1,11 @@
 # Phase 5: Test Hardening
 
+> Authoritative references: [timestamp](../context/timestamp.md), [comment-routing](../context/comment-routing.md), [agent-response](../context/agent-response.md), [worktree-lifecycle](../context/worktree-lifecycle.md)
+
+<!-- Changed by: dev-workflow-plan.md [M-05] [IMPL-05-02..04]
+     Reason: Add citations to timestamp / comment-routing / agent-response per CC-04.3; add Review Rounds > 5 escalation bound per CC-05.1 / GAP-16.
+     CC conventions applied: CC-04.3, CC-05.1, CC-07.3. -->
+
 **Phase**: 5
 **Actors**: Tester agent (auto-harden mode), then Reviewer agent (orchestrator coordinates)
 
@@ -44,7 +50,7 @@ cat .claude/context/language-config.md
 
 ### Record Metric
 
-Set `Test hardening started` to the output of `date -u +"%Y-%m-%d %H:%M UTC"`.
+Set `Test hardening started` to the canonical UTC timestamp (see [timestamp](../context/timestamp.md)).
 
 ### Per-Repo Test Hardening
 
@@ -61,7 +67,7 @@ per-repo hardening). Pass the repo path:
 ```
 @ai-sdlc-tester Harden tests for Story $ARGUMENTS in repo <RepoName> (auto-harden mode).
 Unit tests from Phase 3 already exist in the codebase at <REPO_PATH>.
-Your job: gap-fill integration/E2E tests and enforce >=90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code.
+Your job: gap-fill integration/E2E tests and enforce >=90% line coverage on new/modified code only. Do NOT go out of scope to cover pre-existing code. **Note**: the `/coverage-report` skill reports whole-file/package coverage — there is no diff-aware filter. Compute the new/modified scope yourself: `git -C <REPO_PATH> diff --name-only <feature-branch>...<default-branch>` lists the files to focus on, then read the parser output filtered to those files. See `coverage-report/SKILL.md` → *Scope — important*.
 
 Do NOT rewrite or duplicate unit tests already written in Phase 3.
 Do NOT write production code.
@@ -72,7 +78,7 @@ Commit test code only — do NOT update the task tracker.
 (Templates: ../context/prompt-templates.md)
 
 Instructions:
-1. Read the plan at ai/plans/* to understand the story's acceptance criteria. Note which
+1. Read the plan at `ai/*-<story-id>/plan.md` (new canonical layout per [workflow-paths](../context/workflow-paths.md)) or `ai/plans/*<story-id>*.md` (legacy fallback) to understand the story's acceptance criteria. Note which
    tasks were marked `test-required: false` — their production code is in scope for the
    coverage gate even though Phase 3 wrote no tests for them.
 2. Run the test command — confirm existing Phase 3 tests are passing.
@@ -120,7 +126,24 @@ Do NOT update the tracker — return your review report to the orchestrator.
 
 - If `Verdict: APPROVED` — **Update tracker**: set `T-TEST-<RepoName>` → ✅ Done, set `Reviewer Verdict` to ✅ Approved, and set task `Completed` in Task Metrics. Then proceed to next repo (or Phase 6 if all repos done).
 
-- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Phase 5 only writes test code, so every structured comment is routed to the Tester regardless of prefix: relay all `[T<n>]`, `[S<n>]`, and any `[R<n>]` comments (the last is an out-of-band reviewer error worth surfacing — include them verbatim and flag the prefix mismatch to the human if they recur). The tester addresses and resubmits. After tester SUCCESS, update back to 🔄 In Review. Loop back to Step 2.
+- If `Verdict: CHANGES_REQUESTED` — **Update tracker**: set `T-TEST-<RepoName>` → 🔧 In Progress. Phase 5 only writes test code, so every structured comment from this review should be a `[T<n>]` (test code quality) or `[S<n>]` against a test file (test missing from the Test Outline). Relay both to the Tester. If the Reviewer emits any `[R<n>]` comment in Phase 5, **that is a Reviewer-side error** — Phase 5 has no developer to route it to and no production-code changes are in scope. The orchestrator's response is two complementary actions in lock-step: (i) **escalate** the `[R<n>]` to the human verbatim (the "route" per [comment-routing](../context/comment-routing.md) → P5 row), AND (ii) **pause** the affected lane's tracker state per the case below until the human resolves. The two actions are not alternatives. Handle the mixed-comment case in this order:
+
+  1. **If the review contains both `[R<n>]` AND `[T<n>]/[S<n>]`**: relay the `[T<n>]/[S<n>]` set to the Tester per the standard handling — the lane keeps advancing on the legitimate findings. Separately, surface the `[R<n>]` to the human (see step 3 below).
+  2. **If the review contains ONLY `[R<n>]`** (no test-code findings): the Tester has nothing to do. Pause the lane: leave `T-TEST-<RepoName>` in **🔄 In Review** (do NOT transition to 🔧 In Progress — the universal-rule write would re-stamp `Started` and lose audit fidelity for a "lane stuck on bad reviewer output" state). Wait for human direction.
+  3. **In both cases, surface the prefix mismatch to the human verbatim** with the full `[R<n>]` comment body. The human decides whether the underlying issue is a real pre-existing bug worth a new story / ad-hoc request, a real find requiring an `[a] Expand scope` plan amendment, or noise that can be dismissed. Do NOT silently relay `[R<n>]` to the Tester — the test-only scope would force the Tester to either ignore it or step out of scope, both wrong.
+
+  After the Tester returns SUCCESS (case 1) or the human resolves the stray `[R<n>]` (case 2), update T-TEST back to 🔄 In Review (case 1) or transition normally per the human's resolution (case 2). Loop back to Step 2.
+
+#### Review-Round Escalation Bound (CC-09 — IMPL-05-03 / GAP-16)
+
+<!-- Changed by: dev-workflow-plan.md [M-05] [IMPL-05-03]
+     Reason: Document the Review Rounds > 5 escalation bound per CC-05.1 + CC-09; resolves GAP-16. -->
+
+When `Review Rounds` on the lane's T-TEST exceeds **5** (the CC-09 default `max_review_rounds`; see [tracker-field-schema](../../../agents/shared/tracker-field-schema.md)), the orchestrator MUST stop the harden→review loop and escalate to the human. Five rounds is the elbow where productive review converges; rounds 6+ historically indicate plan / requirements drift, not code drift — escalating then is cheaper than another loop.
+
+Routing of escalation comments follows [comment-routing](../context/comment-routing.md): in P5 test-harden context, `[R]` means production refactor required, which the Tester cannot perform (CC-02.1 boundary) — the orchestrator escalates to the human or triggers a P3 re-entry per `phase-re-entry.md`.
+
+The bound is overridable per-story via the tracker's `Max Review Rounds:` field (CC-09 override path).
 
 ### Parallel Hardening (Multi-Repo)
 
@@ -129,9 +152,8 @@ When multiple repos exist, the orchestrator MAY launch testers in parallel acros
 
 ### Record Final Metric
 
-Once all repos are hardened and approved, set `Test hardening completed` to the output of
-`date -u +"%Y-%m-%d %H:%M UTC"`.
+Once all repos are hardened and approved, set `Test hardening completed` to the canonical UTC timestamp (see [timestamp](../context/timestamp.md)).
 
 ## Next Phase
 
-Proceed to **Phase 6: Create PR** — read and execute `commands/create-pr.md`.
+Proceed to **Phase 5.5: Static Security Review** — read and execute `commands/security-review.md`. The orchestrator auto-invokes P5.5 in full-pipeline mode; only after `Security review completed <ts>` is stamped (and GATE #2.5 cleared if it fired) does the workflow advance to **Phase 6: Create PR** (`commands/create-pr.md`).

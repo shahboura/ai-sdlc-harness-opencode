@@ -36,18 +36,79 @@ import sys
 from pathlib import Path
 
 
+# Legacy tracker directory; the new per-workflow layout
+# (`ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`) is supported additively by
+# `_iter_tracker_files()` below (M-14 IMPL-14-05).
 _TASKS_DIR = Path("ai/tasks")
+_PER_WORKFLOW_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[\w.-]+$")
+
+
+def _iter_tracker_files() -> list[Path]:
+    """Return every tracker file under `ai/` — legacy (`ai/tasks/*.md`) and
+    new (`ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`). Falls back to the
+    legacy list when the new layout has no entries — preserves pre-migration
+    behaviour.
+    """
+    files: list[Path] = []
+    ai_root = Path("ai")
+    if not ai_root.is_dir():
+        return files
+    # New per-workflow layout — one tracker per directory.
+    for child in sorted(ai_root.iterdir(), reverse=True):
+        if not child.is_dir():
+            continue
+        if not _PER_WORKFLOW_RE.match(child.name):
+            continue
+        tracker = child / "tracker.md"
+        if tracker.is_file():
+            files.append(tracker)
+    # Legacy layout.
+    if _TASKS_DIR.is_dir():
+        files.extend(sorted(_TASKS_DIR.glob("*.md"), reverse=True))
+    return files
 _TASK_ID_RE = re.compile(r"^T\d+$")
 _T_TEST_RE = re.compile(r"^T-TEST", re.IGNORECASE)
 _HEADER_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{2,}")
 
 
-def _detect_mode() -> str:
+_VALID_MODES = ("auto-tdd", "auto-harden")
+
+
+def _detect_mode(argv: list[str] | None = None) -> str:
+    """Detect the Tester mode.
+
+    Preference order (M-10 IMPL-10-02):
+        1. `--mode auto-tdd|auto-harden` flag in argv — orchestrator-side
+           contract introduced in M-10 IMPL-10-01.
+        2. `CLAUDE_SUBAGENT_PROMPT` env-var keyword scan — legacy fallback.
+           When this path triggers, a deprecation warning is emitted to
+           stderr (TEST-56).
+        3. Default to `auto-harden` (stricter check) when neither resolves.
+    """
+    src = argv if argv is not None else sys.argv[1:]
+    # Scan for `--mode <value>` or `--mode=<value>`.
+    for i, tok in enumerate(src):
+        if tok == "--mode" and i + 1 < len(src):
+            val = src[i + 1].strip().lower()
+            if val in _VALID_MODES:
+                return val
+        elif tok.startswith("--mode="):
+            val = tok[len("--mode="):].strip().lower()
+            if val in _VALID_MODES:
+                return val
+
+    # Legacy env-var fallback.
     prompt = os.environ.get("CLAUDE_SUBAGENT_PROMPT", "")
     low = prompt.lower()
-    if "auto-tdd" in low:
-        return "auto-tdd"
-    if "auto-harden" in low:
+    if "auto-tdd" in low or "auto-harden" in low:
+        print(
+            "tester-activation-guard: DEPRECATION — mode resolved via "
+            "CLAUDE_SUBAGENT_PROMPT env var. Prefer `--mode auto-tdd` or "
+            "`--mode auto-harden` from the orchestrator-side spawn (M-10 IMPL-10-01).",
+            file=sys.stderr,
+        )
+        if "auto-tdd" in low:
+            return "auto-tdd"
         return "auto-harden"
     return "auto-harden"
 
@@ -201,23 +262,24 @@ def _check_auto_harden(tracker_files: list[Path]) -> tuple[bool, str]:
 
 
 def main() -> int:
-    if not _TASKS_DIR.is_dir():
-        print(
-            f"BLOCKED: No task tracker directory found at {_TASKS_DIR}.",
-            file=sys.stderr,
-        )
-        print(
-            "The Planner agent must create tracker files before testing can begin.",
-            file=sys.stderr,
-        )
-        return 2
-
-    tracker_files = sorted(_TASKS_DIR.glob("*.md"), reverse=True)
+    tracker_files = _iter_tracker_files()
     if not tracker_files:
-        print(
-            "BLOCKED: No task tracker files found. Cannot verify workflow state.",
-            file=sys.stderr,
-        )
+        # Distinguish "no ai/ tree at all" from "ai/ exists but no tracker"
+        # for diagnostic clarity. Both block.
+        if not Path("ai").is_dir():
+            print(
+                f"BLOCKED: No task tracker directory found at {_TASKS_DIR} (or per-workflow layout).",
+                file=sys.stderr,
+            )
+            print(
+                "The Planner agent must create tracker files before testing can begin.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "BLOCKED: No task tracker files found. Cannot verify workflow state.",
+                file=sys.stderr,
+            )
         return 2
 
     mode = _detect_mode()

@@ -26,7 +26,7 @@ assert_not_regex() {
 # Task 1: Step 5b "Test Pattern References" exists with the bounded heuristic.
 assert_contains '### 5b. Test Pattern References' 'plan-generator declares Step 5b'
 assert_contains 'filename-globbing only' 'Step 5b restricts heuristic to filename globbing'
-assert_contains 'does NOT read the contents of any candidate file' 'Step 5b forbids content reads (the FE-008 stall mode)'
+assert_contains 'does NOT read the contents of any candidate file' 'Step 5b forbids content reads (Tester stall mode)'
 assert_contains 'At most 5 globs' 'Step 5b caps glob count'
 assert_contains 'at most 2 matches' 'Step 5b caps match count per task'
 

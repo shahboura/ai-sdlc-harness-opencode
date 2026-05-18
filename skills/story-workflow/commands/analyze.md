@@ -78,11 +78,13 @@ Show the full report to the user in the conversation. Then ask:
 
 > "Would you like me to post this as a comment on work item #[ID]?"
 
-If the user confirms, use the **add comment** tool from the provider adapter to add the
-readiness report as a comment on the work item. Format the comment appropriately:
-- **ADO**: Convert markdown to HTML.
-- **Jira**: Use markdown or ADF depending on MCP server support.
-- **GitLab / GitHub**: Post markdown directly (native support).
+If the user confirms:
+
+- **For ADO / Jira / GitLab / GitHub / Zoho** (every provider that declares `work_item.add_comment`): use the **add comment** tool from the active provider adapter to add the readiness report as a comment on the work item. Format the comment appropriately:
+  - **ADO**: Convert markdown to HTML.
+  - **Jira**: Use markdown or ADF depending on MCP server support.
+  - **GitLab / GitHub**: Post markdown directly (native support).
+- **For `local-markdown`** (the adapter has no `work_item.add_comment` capability — there's no remote system to post to): the report is presented in the conversation only. Surface this to the user: *"Posting back isn't supported for `local-markdown` stories — there's no comment thread on a local file. The full report is in the conversation above for you to copy. If you want to persist it, save it as a sibling `.md` (e.g. `<story-basename>-readiness.md`)."* Do NOT overwrite the source story file with the readiness report — that's the `improve` / `refine` commands' role.
 
 If the user wants changes, iterate on the report before posting.
 

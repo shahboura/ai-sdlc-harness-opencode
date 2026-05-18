@@ -1,12 +1,19 @@
 # Phase 2: Planning & Approval
 
+> Authoritative references: [timestamp](../context/timestamp.md), [agent-response](../context/agent-response.md), [provider-resolver](../context/provider-resolver.md)
+
+<!-- Changed by: dev-workflow-plan.md [M-11] [IMPL-11-01]
+     Reason: Add canonical-spec header per CC-07.3 — this command is an execution script;
+     the phase contract lives in the spec.
+     CC conventions applied: CC-07.3. -->
+
 **Phase**: 2
 **Actor**: Planner agent, then Human gate
 
 ## Prerequisites
 
 - Phase 1 complete — requirements confirmed by the Planner.
-- Feature branch exists.
+- **No feature branch is required.** Branches are created in Pre-flight (after this phase) once the Planner has identified the affected repos. Phase 1 and Phase 2 produce only workspace files at `ai/<YYYY-MM-DD>-<work-item-id>/{plan,tracker,test-outline}.md` (new canonical layout per [workflow-paths](../context/workflow-paths.md)); the workspace's own branch is irrelevant.
 - If in direct phase mode, verify requirements were ingested by checking for Planner output
   or by re-running Phase 1 first.
 
@@ -49,7 +56,7 @@ Present the complete plan for human approval.
 
 ### HUMAN GATE #1
 
-The plan **must** be presented to the human user. Proceed **only** on receiving `APPROVED`.
+The plan **must** be presented to the human user. Proceed **only** on a reply that matches the canonical approval matcher declared in [`context/orchestrator-rules.md`](../context/orchestrator-rules.md) → *Human Approval Signal — canonical matcher* (case-insensitive `APPROVED`, optional trailing `.`, no embedded qualifications).
 If changes are requested, have the Planner revise and re-present.
 
 ### Record Metric: Plan Approved
@@ -59,47 +66,27 @@ Update the tracker's **Workflow Metrics** table — set `Plan approved` to the c
 date -u +"%Y-%m-%d %H:%M UTC"
 ```
 
-### Commit the Plan
+### Plan Commit Deferred to Pre-flight
 
-Per [orchestrator rule #8] (`<WORKSPACE_ROOT>/ai/` is the canonical home; the repo copy
-does not exist until Phase 6), this step's behavior depends on whether the workspace is
-itself a git repository. First, check:
+The plan is **not** committed at this step. In the previous workflow ordering (preflight
+before Phase 1), the feature branch was already checked out by the time Phase 2 finished and
+the plan commit could land on it directly. In the current ordering (preflight after Phase 2),
+the feature branch does not yet exist — committing here would put the plan on the default
+branch, which is wrong.
 
-```bash
-git -C ai/plans/ rev-parse --is-inside-work-tree 2>/dev/null
-```
+The plan commit moves into `commands/preflight.md` (single-repo workspace-is-git-repo case
+only) so it lands on the just-created feature branch. The workspace-not-a-git-repo case is
+unchanged: the plan stays at `<WORKSPACE_ROOT>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (or legacy `<WORKSPACE_ROOT>/ai/plans/<id>.md`) per orchestrator rule #8 and
+travels into each affected repo alongside the tracker in Phase 6 (`commands/create-pr.md`
+Step 6).
 
-**If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
-
-Commit **only the plan file** (the tracker stays uncommitted):
-
-```bash
-git add ai/plans/
-git commit -m "$(cat <<'EOF'
-#<STORY-ID> #TPLAN: add approved implementation plan
-
-Co-Authored-By: Claude Code <noreply@anthropic.com>
-EOF
-)"
-```
-
-**If the workspace is NOT a git repo** (exits non-zero — workspace-separated case):
-
-**Skip the commit.** The plan stays in `<WORKSPACE_ROOT>/ai/plans/` per rule #8 and travels
-into each affected repo alongside the tracker in Phase 6 (`commands/create-pr.md` Step 6).
-
-Do NOT `cp` or otherwise copy the plan into a code repo at this phase — rule #8 forbids it,
-and the `bash-write-guard` hook will block any Bash write to `/ai/` paths by design. If a
-command file step appears to conflict with rule #8, surface the conflict to the human per
-the Conflict-Surfacing Rule in `context/orchestrator-rules.md` rather than inventing a
-workaround.
-
-**The task tracker is NOT committed here.** It remains an uncommitted working file that the
-orchestrator updates in-place throughout Phases 3-5. It is committed once before PR creation
-in Phase 6.
-
-**This step is done by the orchestrator directly (not delegated to an agent).**
+**The task tracker is NOT committed in this phase or in preflight either.** It remains an
+uncommitted working file that the orchestrator updates in-place throughout Phases 3-5. It is
+committed once before PR creation in Phase 6.
 
 ## Next Phase
 
-Proceed to **Phase 3: Develop** — read and execute `commands/develop.md`.
+Proceed to **Pre-flight** — read and execute `commands/preflight.md`. Preflight reads the
+tracker's `## Repo Status` section (populated by the Planner per `plan-generator/SKILL.md`
+Step 7) to create feature branches in exactly the repos the plan named, then commits the
+plan (single-repo workspace-is-git-repo case only) onto the new feature branch.

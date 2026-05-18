@@ -17,3 +17,8 @@ Thumbs.db
 
 # Reviewer / working notes (not part of the plugin)
 Plugin Review.md
+
+# Local development journals — written by harness-development sessions,
+# user-state-bearing, never part of the plugin distribution.
+execution-log.md
+eval-prompt-*.md

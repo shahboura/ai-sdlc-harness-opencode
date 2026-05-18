@@ -1,5 +1,15 @@
 # Phase 7: PR Review Response
 
+> Authoritative references: [provider-resolver](../context/provider-resolver.md), [summary-render](../context/summary-render.md), [phase-re-entry](../context/phase-re-entry.md), [timestamp](../context/timestamp.md), [comment-routing](../context/comment-routing.md), [agent-response](../context/agent-response.md), [workflow-paths](../context/workflow-paths.md)
+
+> **Path resolution (M-14 IMPL-14-02)**: every inline reference to `ai/plans/<id>.md` / `ai/tasks/<id>.md` in this command is the **legacy** layout. Resolve actual paths via `ai/*-<work-item-id>/{plan,tracker,pr-comment-analysis-report-<n>}.md` (new canonical layout per [workflow-paths](../context/workflow-paths.md)); fall back to the legacy paths during the migration window.
+
+<!-- Changed by: dev-workflow-plan.md [M-06] [IMPL-06-02, IMPL-06-04]
+     Reason: Cite shared snippets + add canonical-spec header per CC-04.3 / CC-07.3 / CC-08.2.
+     The Step 8b re-entry sequence (P3 re-entry + P5 re-trigger) is the GAP-07 duplicate
+     that now defers to `phase-re-entry.md` rather than inlining the same prose as handle-request.md.
+     CC conventions applied: CC-04.3, CC-07.3, CC-08.2. -->
+
 **Phase**: 7
 **Actor**: Orchestrator, Reviewer (analysis), Planner (task creation), Human gate (GATE #4)
 
@@ -7,10 +17,12 @@
 
 - PR(s) created (Phase 6 complete).
 - `PR created` timestamp is set in tracker.
-- If in direct phase mode, verify:
+- If in direct phase mode, verify both the tracker and plan exist (canonical M-14 layout first; legacy fallback during the migration window):
   ```bash
-  ls ai/tasks/*  # tracker must exist
-  ls ai/plans/*  # plan must exist
+  # Canonical (M-14 per workflow-paths.md):
+  ls ai/*-${STORY_ID}/tracker.md ai/*-${STORY_ID}/plan.md 2>/dev/null
+  # Legacy fallback (deprecated):
+  ls ai/tasks/*${STORY_ID}*.md ai/plans/*${STORY_ID}*.md 2>/dev/null
   ```
 
 ## Overview
@@ -30,12 +42,17 @@ cat .claude/context/provider-config.md
 cat .claude/context/language-config.md
 ```
 
-Read ALL tracker files in `ai/tasks/` matching the Story ID.
+Locate the tracker — canonical layout first, legacy fallback:
 
-Parse the tracker's **Repo Status** section to build a map of:
+```bash
+TRACKER=$(ls -t ai/*-${STORY_ID}/tracker.md 2>/dev/null | head -1)
+[ -z "$TRACKER" ] && TRACKER=$(ls -t ai/tasks/*${STORY_ID}*.md 2>/dev/null | head -1)
+PLAN=$(ls -t ai/*-${STORY_ID}/plan.md 2>/dev/null | head -1)
+[ -z "$PLAN" ] && PLAN=$(ls -t ai/plans/*${STORY_ID}*.md 2>/dev/null | head -1)
+```
+
+Read every tracker matching the Story ID under both layouts and parse the tracker's **Repo Status** section to build a map of:
 `repo-name → { local-path, feature-branch, default-branch }`
-
-Also locate the plan file at `ai/plans/*<STORY-ID>*`.
 
 ### Step 2 — Fetch PR Comments (per repo)
 
@@ -96,7 +113,7 @@ MODE: pr-comment-analysis
 REVIEW CONTEXT:
 - Repo: <repo-name>
 - Repo path: <local repo path>
-- Feature branch: <team-name>/<type>/<id>-<slug>
+- Feature branch: <team-name>/feature/<id>-<slug>
 - Default branch: <main | master>
 - Plan path: <ai/plans/...>
 - Story ID: #<STORY-ID>
@@ -239,7 +256,9 @@ After confirmed `Outcome: SUCCESS`, record `PR review response started` in orche
 
 Read and execute `commands/develop.md`, applying the following scope filter before starting:
 
-> **Only process tasks whose `Notes` column contains `PR-comment:` and `Status: ⏳ Pending`.**
+> **Only process task rows that live under a `## Amendments (PR Review Round <N>)` heading AND have `Status: ⏳ Pending`.**
+
+The filter is **section-based**, not content-based. Pre-C3 it matched on `Notes contains \`PR-comment:\``, which worked only because the `PR-comment:` token happened to be unique to Amendments rows by convention (per `tracker-schema.md` → *Notes column tokens*) — a future change that allowed the token in any other section would silently widen the filter. Section-based matching is the durable signal: the `## Amendments (PR Review Round <N>)` heading is the canonical owner of Phase 7 tasks, and the orchestrator already needs to know which round it's on to derive `Round: <N>` for the Planner invocation in Step 7.
 
 All Phase 3 rules apply unchanged:
 - TDD path for `test-required: true` tasks (Tester → Developer → Reviewer)
@@ -249,7 +268,60 @@ All Phase 3 rules apply unchanged:
 - Parallel execution across repos (via `run_in_background: true`)
 - Squash-merge on Reviewer approval
 
-After all new tasks are ✅ Done across all repos, proceed to Step 9.
+After all new tasks are ✅ Done across all repos, proceed to Step 8b.
+
+### Step 8b — Re-trigger Phase 5 hardening on affected repos
+
+Phase 7 amendments reuse the existing `T-TEST-<RepoName>` row (per
+`plan-generator/SKILL.md` → *Phase 7 Amendment Mode*). The original Phase 5
+hardening ran against the original code and is recorded as ✅ Done — but new
+amendment production code has now landed on the feature branch and the 90%
+coverage gate has never been checked against the union. Without this step,
+amendments ship in the PR without coverage enforcement.
+
+For each repo where this Phase 7 batch added at least one task, read the
+`T-TEST-<RepoName>` row's Status:
+
+- **`Status: ✅ Done`** → re-trigger Phase 5 hardening on this repo:
+  1. Set `T-TEST-<RepoName>` → `🔧 In Progress` (legal `✅ Done → 🔧 In Progress`
+     transition per `tracker-schema.md`; the `tracker-transition-guard` hook
+     accepts it as a "rework" transition). Per the universal orchestrator rule
+     "Set task `Started` (Task Metrics) when marking a task 🔧 In Progress"
+     (`orchestrator-rules.md` → rule #3), this transition **also overwrites the
+     original Phase 5 `Started` timestamp** on the T-TEST row. Both `Started`
+     and `Completed` on the row reflect the most recent hardening pass; the
+     audit trail of "when did the *first* Phase 5 run start" is lost from the
+     T-TEST row but preserved via `Test hardening started` in the Workflow
+     Metrics table (which is NOT overwritten — see the workflow-metrics
+     non-update paragraph below).
+  2. Invoke `commands/test.md` Step 1 (auto-harden Tester) and Step 2 (Reviewer)
+     for this repo, following the exact same loop as the original Phase 5 run.
+  3. On Reviewer `APPROVED` → set `T-TEST-<RepoName>` → `✅ Done`, set
+     `Reviewer Verdict` to ✅ Approved, set `Completed` in Task Metrics to the
+     current UTC timestamp (overwrites the original Phase 5 completion stamp
+     for this T-TEST row — the row records the most recent hardening pass).
+  4. On Reviewer `CHANGES_REQUESTED` → loop per the standard Phase 5 handling
+     (relay all `[T<n>]`, `[S<n>]`, and any `[R<n>]` comments to the Tester;
+     T-TEST stays `🔧 In Progress` until the Tester returns SUCCESS and the
+     Reviewer approves on the next round).
+
+- **`Status` is anything else** → the upcoming or in-flight Phase 5 will
+  naturally cover the new amendment code when it runs. Do not re-trigger.
+  This case is rare (it implies the workflow resumed mid-Phase-5 or the
+  amendment landed before the original Phase 5 completed), but the guard
+  prevents a redundant re-trigger and an illegal transition.
+
+Multiple repos may be re-triggered in parallel via `run_in_background: true`
+per the standard Phase 5 parallel-hardening pattern. Sequential within each
+repo — at most one in-flight Tester or Reviewer per repo.
+
+The Workflow Metrics `Test hardening started` / `Test hardening completed`
+timestamps are NOT re-set by this step — they record Phase 5's first run, and
+Phase 7's re-trigger is tracked by the per-row `Completed` Task Metric on
+`T-TEST-<RepoName>` and the `PR review response completed` metric. Re-stamping
+the Phase 5 metrics would fragment the audit trail across phases.
+
+After every re-triggered `T-TEST-<RepoName>` returns to ✅ Done, proceed to Step 9.
 
 ### Step 9 — Record Completion and Offer PR Replies
 
@@ -266,13 +338,22 @@ every Phase 7 task commit above it, making the values just recorded in the track
 First, determine whether the workspace is itself a git repository:
 
 ```bash
-git -C ai/tasks/ rev-parse --is-inside-work-tree 2>/dev/null
+git -C ai/<YYYY-MM-DD>-<work-item-id>/ rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
 **If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
 
+Stage both `ai/tasks/` and `ai/plans/`. The plan is included for the same reason as in the
+workspace-not-a-git-repo branch below: a Phase 7 batch may have arrived via `[a] Expand scope`
+and run `MODE: plan-amendment`, which appends a `## Plan Amendment — Ad-Hoc Round <N>`
+section to the workspace plan file. Without staging the plan, the amendment stays
+uncommitted on the feature branch — the tracker references plan content that the repo's
+committed plan file does not contain. If the plan was unchanged this round, staging
+`ai/<YYYY-MM-DD>-<work-item-id>/` includes the plan file as a no-op (Git skips byte-
+identical files) and the commit lands with only the tracker delta.
+
 ```bash
-git add ai/tasks/
+git add ai/<YYYY-MM-DD>-<work-item-id>/
 git commit -m "$(cat <<'EOF'
 #<STORY-ID> #TPR-RESP: record PR review response completion
 
@@ -284,15 +365,29 @@ git push origin <feature-branch>
 
 **If the workspace is NOT a git repo** (tracker was copied into the repo in Phase 6 Step 6):
 
-Sync the updated tracker back into each affected repo using the **Read + Write** tools
-(not `cp` — the `bash-write-guard` hook blocks Bash writes to `ai/` paths):
+Sync the updated tracker **and the plan** back into each affected repo using the
+**Read + Write** tools (not `cp` — the `bash-write-guard` hook blocks Bash writes
+to `ai/` paths). The plan is included because a Phase 7 batch may have arrived via
+the inter-gate ad-hoc flow's `[a] Expand scope` path, which invokes
+`MODE: plan-amendment` and appends a `## Plan Amendment — Ad-Hoc Round <N>`
+section to the workspace plan file. Without re-syncing the plan, the per-repo copy
+committed in Phase 6 would stay frozen at the pre-amendment state and the next
+holistic review (or any human looking at the merged PR) would see a tracker
+referring to a plan section that doesn't exist in the repo:
 
-- Read `ai/tasks/<tracker-file>` (workspace) → Write to `<REPO_PATH>/ai/tasks/<tracker-file>`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)    → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
+
+If the workspace plan file's mtime is unchanged since the last sync (Phase 6 Step 6
+or a prior Phase 7 Step 9), the Write call is a no-op on content; skipping the read
+is a valid optimisation but not required — the cost of an extra Read+Write is
+trivial compared to the cost of a missed amendment, and the no-op write doesn't
+dirty the working tree (Git's `add` ignores byte-identical files).
 
 Then commit and push from the repo:
 
 ```bash
-git -C "<REPO_PATH>" add ai/tasks/
+git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
 git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
 #<STORY-ID> #TPR-RESP: record PR review response completion
 
@@ -303,7 +398,10 @@ git -C "<REPO_PATH>" push origin <feature-branch>
 ```
 
 Both pushes are fast-forward (a new commit on top of the remote's tip), so
-`--force-with-lease` is not required.
+`--force-with-lease` is not required. If the plan was unchanged this round, the
+commit's tree has no plan delta and staging `ai/<YYYY-MM-DD>-<work-item-id>/`
+includes the plan file as a no-op — the commit still lands cleanly because the
+tracker delta is independent.
 
 Present to the human:
 
@@ -328,6 +426,31 @@ Addressed in commit <squash-merge-hash>: <one-sentence summary of what was chang
 Route through `skills/providers/<git-provider>/pr-comments.md` (the
 `pr.reply_to_review_comment` capability). The thread IDs come from the tracker — not from
 session memory — so this step is safe to run even after a session interruption.
+
+### Step 10 — T2 Metrics Collection
+
+Per the P9 metrics-collector contract (`skills/metrics-collector/SKILL.md`),
+P7 triggers metrics aggregation at **T2** with `--round <n>` at the end of
+each review cycle (1-indexed: first review round is `--round 1`, second is
+`--round 2`, etc.). Use the same workflow directory the rest of P7
+operates against.
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
+    "ai/<YYYY-MM-DD>-<work-item-id>" \
+    --round <n>
+```
+
+The round number for this invocation equals the count of distinct
+`pr-comment-analysis-report-*.md` files in the workflow directory after the
+current cycle's analysis was written. The aggregator computes
+`p7_duration_minutes` from `PR created` → `PR review response completed`,
+and `pr_review_rounds` from the file count itself.
+
+Exit semantics match T1: `0` success, `1` validation failure with
+`.error.md` sibling, `2` precondition unmet. On non-zero, surface
+`.error.md` to the human but do not abort P7 — the response loop has
+already completed; the metrics row is a non-blocking observation.
 
 ---
 

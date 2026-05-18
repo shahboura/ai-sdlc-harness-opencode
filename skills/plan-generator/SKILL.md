@@ -10,6 +10,11 @@ argument-hint: "[Work-Item-ID] [brief-slug]"
 
 # Plan Generator
 
+> **See also**: [`tracker-schema.md`](tracker-schema.md) — single-page
+> reference for every tracker section, column, Notes-token, and enum.
+> Edit it first when adding or renaming any schema element; the rest of
+> this file (and the orchestrator command files) cross-reference it.
+
 ## Purpose
 
 Take a validated requirements summary and produce a comprehensive implementation plan with atomic tasks, class diagrams, flow charts, sequence diagrams, and a task tracker file.
@@ -77,7 +82,19 @@ The selected approach informs all subsequent steps — task decomposition, diagr
 
 ### 1. Pre-Flight
 
-Read ALL existing tracker files in `ai/tasks/` matching `*$ARGUMENTS[0]*` to check for prior session work.
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-01]
+     Reason: Per CC-05.7 / workflow-paths.md, the canonical layout is `ai/<YYYY-MM-DD>-<work-item-id>/`.
+     Read-side compatibility for legacy `ai/tasks/*<id>*.md` is preserved during the migration window.
+     CC conventions applied: CC-05.7, CC-04.3. -->
+
+> Authoritative reference: [workflow-paths](../dev-workflow/context/workflow-paths.md)
+
+Read prior-session work from **both** layouts:
+
+1. **New canonical layout (M-14)**: `ai/*-$ARGUMENTS[0]/tracker.md` (any date prefix).
+2. **Legacy layout (deprecated)**: `ai/tasks/*$ARGUMENTS[0]*.md`.
+
+If a directory matching the new layout already exists for this `<work-item-id>`, the orchestrator's P1 entry has already prompted the human for Takeover / Abort per CC-05.7.2 — see [commands/requirements.md](../dev-workflow/commands/requirements.md) S0. Inside the planner, you may safely assume the directory is yours to write to.
 
 ### 1b. Repo Identification (Multi-Repo)
 
@@ -144,37 +161,63 @@ token in Phase 3 to gate lane progression (see `commands/develop.md` Step 1 sub-
 
 When repos communicate at runtime (HTTP API calls, Service Bus messages, shared DTOs), define the **contracts** upfront so both sides can develop in parallel without waiting.
 
-For each cross-repo boundary, produce a contract definition:
+> Authoritative reference: [workflow-paths](../dev-workflow/context/workflow-paths.md) — contracts live at `ai/<YYYY-MM-DD>-<work-item-id>/contracts.md`, a sibling of `plan.md` and `tracker.md`.
+
+For multi-repo stories with at least one cross-repo boundary, write a dedicated `contracts.md` to the per-workflow directory. The plan.md itself retains a one-line stub (`## Cross-Repo Contracts → see contracts.md`) so a reader of the plan knows where to look; the full contract bodies live in `contracts.md`. For single-repo stories — and multi-repo stories with no cross-repo boundaries — `contracts.md` is **not** written and the plan.md stub is omitted.
+
+#### Why a separate artifact?
+
+- **Amendments don't churn the plan.** When Phase 7 amendments or ad-hoc requests evolve a contract, the diff is scoped to `contracts.md` instead of producing a noisy `plan.md` rewrite.
+- **Clear ownership.** `develop.md` and the reviewer each read `contracts.md` directly; neither has to scan the plan body for the right section heading.
+- **Reviewer compliance hook.** The reviewer's Phase 3 / Phase 6 compliance check has a single artifact to diff against, not a sub-section of a larger document.
+
+#### contracts.md format
+
+The file has the format below. The exact section heading (`## C<n> — <type>`) is the stable contract that the orchestrator and reviewer parsers depend on — do **not** rename it or change capitalisation.
+
+```markdown
+# Cross-Repo Contracts — <story-id>
+
+> Story: <story-id> · Generated: <ts> · Source: plan.md Section 2b
+
+## C1 — HTTP API
+- **Producer**: BillingService
+- **Consumer**: ApiGateway
+- **Definition**:
+  ```
+  PUT /api/v1/customers/{customerId}/subscription
+  Request:  UpdateSubscriptionRequest { PlanId: string, BillingCycle: string, ... }
+  Response: SubscriptionResponse { Id: Guid, Status: string, ... }
+  ```
+
+## C2 — Service Bus Message
+- **Producer**: BillingService
+- **Consumer**: AuthService
+- **Definition**:
+  ```
+  Topic: subscription-changed
+  Payload: SubscriptionChangedEvent { CustomerId: Guid, SubscriptionId: Guid, Action: string }
+  ```
+```
+
+Per-contract fields:
 
 | Field | Description |
 |-------|-------------|
-| **Contract ID** | C1, C2, C3, ... |
-| **Type** | `HTTP API` \| `Service Bus Message` \| `Shared DTO` |
-| **Producer** | Repo that owns/exposes the contract |
-| **Consumer** | Repo(s) that depend on the contract |
-| **Definition** | Full signature: endpoint path + HTTP method + request/response DTOs, or message topic + payload schema |
+| **Contract ID** | `C<n>` — 1-based, monotonically increasing. Used as the section heading prefix (`## C1`, `## C2`, …). |
+| **Type** | `HTTP API` \| `Service Bus Message` \| `Shared DTO` — used as the section heading suffix (`## C1 — HTTP API`). |
+| **Producer** | Repo that owns/exposes the contract. One repo name from `repos-paths.md`. |
+| **Consumer** | Repo(s) that depend on the contract. Comma-separated repo names. |
+| **Definition** | Full signature: endpoint path + HTTP method + request/response DTOs, or message topic + payload schema. Use a fenced code block under the `**Definition**:` bullet. |
 
-**Example:**
-```
-C1 — HTTP API
-  Producer: BillingService
-  Consumer: ApiGateway
-  Definition:
-    PUT /api/v1/customers/{customerId}/subscription
-    Request:  UpdateSubscriptionRequest { PlanId: string, BillingCycle: string, ... }
-    Response: SubscriptionResponse { Id: Guid, Status: string, ... }
+#### Consumption
 
-C2 — Service Bus Message
-  Producer: BillingService
-  Consumer: AuthService
-  Definition:
-    Topic: subscription-changed
-    Payload: SubscriptionChangedEvent { CustomerId: Guid, SubscriptionId: Guid, Action: string }
-```
+- **Developer**: receives the relevant contracts (those naming their repo as Producer or Consumer) as part of the CONTRACTS_CTX prompt block — the orchestrator extracts them from `contracts.md` per [`prompt-templates.md`](../dev-workflow/context/prompt-templates.md) → *CONTRACTS_CTX*.
+- **Reviewer**: reads `contracts.md` during Phase 3 / Phase 6 compliance review. The producer's implementation must match the Definition verbatim; the consumer must code against the same Definition. A mismatch is an `[S<n>]` (Spec compliance) failure with a `Contract: C<n>` annotation in the comment body.
 
-Each developer receives the relevant contracts as context alongside their task. The developer implements **against** the agreed contract — the other side does not need to exist yet.
+#### Amendments
 
-The reviewer verifies contract compliance: the producer's implementation matches the contract definition, and the consumer codes against the same contract.
+Phase 7 PR-comment-driven amendments and inter-gate ad-hoc requests that touch a contract update `contracts.md` (not `plan.md`). The Planner's `MODE: ad-hoc-tasks` / `MODE: plan-amendment` paths read the existing `contracts.md` and append / edit `## C<n>` sections; the plan stub in `plan.md` remains unchanged.
 
 ### 3. Class Diagram
 
@@ -195,6 +238,28 @@ classDiagram
     }
     ITokenRefreshService <|.. TokenRefreshService
 ```
+
+#### Wrapper-type check for update / PATCH DTOs (NON-NEGOTIABLE)
+
+When the diagram contains any DTO used for **partial-update** semantics (HTTP `PATCH`, "update only the fields provided", an admin-edit form with optional toggles, a Service Bus message that may omit fields), **every optional field MUST use a wrapper / nullable type** — never a primitive that cannot represent "unset":
+
+| Language | Optional-field type — use this | Primitive that conflates with `false` / `0` — never use this for optional fields |
+|---|---|---|
+| Java | `Boolean`, `Integer`, `Long`, `Double` | `boolean`, `int`, `long`, `double` |
+| Kotlin / Scala | `Boolean?`, `Int?`, `Long?` | `Boolean`, `Int`, `Long` |
+| C# | `bool?`, `int?`, `long?`, `Nullable<T>` | `bool`, `int`, `long` |
+| Go | `*bool`, `*int`, `*int64` | `bool`, `int`, `int64` |
+| TypeScript | `boolean \| undefined` (with `?:`) | `boolean` (always-present) |
+| Python | `Optional[bool]`, `bool \| None` | `bool` (Pydantic field without `default=None`) |
+| Rust | `Option<bool>`, `Option<i32>` | `bool`, `i32` |
+
+**Why**: primitives default to `false` / `0` on the server side. The server can't distinguish "client sent `false`" from "client omitted the field". The downstream port/repository can't honour "only update the fields that changed", and the unit-test author will write tests assuming wrapper semantics (`Boolean.TRUE` / `Boolean.FALSE` / `null`) that the production code then fails — a class of mismatch that costs real wall-clock time when caught at code-review time instead of plan-review time.
+
+**Required actions when the plan contains an update/PATCH DTO:**
+
+1. Annotate every optional field in the class diagram with the wrapper / nullable type for the target language.
+2. Add a line to the **Risk/assumptions** section (item 13 below) stating which DTO fields are optional and confirming wrapper types are used — e.g. `Risk: UpdateMappingDto.streamingEnabled is Boolean (not boolean) — primitive would conflate "set to false" with "not provided" in partial-update semantics.`
+3. If the surrounding code already uses primitives (legacy DTO being modified), call out the migration explicitly as a sub-task in the breakdown rather than silently changing the field type.
 
 ### 4. Flow Chart
 
@@ -249,7 +314,7 @@ For each task T(n) in the task breakdown, produce a Test Outline that lists the 
 
 ### 5b. Test Pattern References (Bounded Pattern-Hint Discovery)
 
-For every task with `test-required: true`, produce a short list of 0–2 existing test files in the target repo that would be useful patterns for the Tester to consult. The Tester reads these *instead of* roaming the tree looking for analogous tests at Phase 3 time — the FE-008 retrospective showed unbounded pattern-discovery research is a primary cause of sub-agent watchdog stalls.
+For every task with `test-required: true`, produce a short list of 0–2 existing test files in the target repo that would be useful patterns for the Tester to consult. The Tester reads these *instead of* roaming the tree looking for analogous tests at Phase 3 time — unbounded pattern-discovery research at Phase 3 is a primary cause of sub-agent watchdog stalls (observed in past runs), so the Planner front-loads the discovery once instead of every Tester re-doing it.
 
 **Heuristic — strictly filename-globbing only. No semantic comparison, no advisor calls, no reading file contents.** The Planner runs at most 5 globs per task and returns at most 2 matches, ranked by file modification time (newest first). If no globs match, the task's pattern list is empty.
 
@@ -285,7 +350,7 @@ For every task with `test-required: true`, produce a short list of 0–2 existin
 
 - Globbing is finite — `Glob` returns immediately or not at all; no recursion past the test root.
 - At most 5 globs × 1 candidate-token sweep per task. The Planner does NOT keep retrying with broader patterns. "No match" is a valid answer.
-- **The Planner does NOT read the contents of any candidate file.** Filename match is the entire signal. Rationale: file-content semantic comparison is what stalled the Tester at Phase 3 in the FE-008 retro; relocating that to Phase 2 just shifts the stall earlier.
+- **The Planner does NOT read the contents of any candidate file.** Filename match is the entire signal. Rationale: file-content semantic comparison is what has historically stalled the Tester at Phase 3; relocating that work to Phase 2 just shifts the stall earlier.
 - The output is a *suggestion*. The human reviews these patterns at GATE #1 and may strike or replace any line before approving the plan.
 
 The approved Patterns list per task is inlined verbatim into the Tester's prompt as a `TEST PATTERN HINTS` block (see `prompt-templates.md` → `PATTERN_HINTS_CTX`).
@@ -297,10 +362,21 @@ The approved Patterns list per task is inlined verbatim into the Tester's prompt
 date -u +%Y-%m-%d   # capture as TODAY (UTC — canonical per orchestrator-rules #14)
 # Derive WORKSPACE_ROOT: it is the directory whose .claude/context/ holds provider-config.md
 # You already read repos-paths.md from .claude/context/ in step 1b — use its parent's parent
+# Normalise the work-item ID: replace every char outside [A-Za-z0-9._-] with `-`
+# (skills/providers/shared/safe-id.md — never produce a divergent path)
+STORY_ID=$(echo "<raw-id>" | LC_ALL=C sed 's/[^A-Za-z0-9._-]/-/g')
+WORKFLOW_DIR="$WORKSPACE_ROOT/ai/${TODAY}-${STORY_ID}"
+mkdir -p "$WORKFLOW_DIR"
 ```
-Save to: `$WORKSPACE_ROOT/ai/plans/TODAY_<story-id>_<slug>.md`
-where TODAY is the output of the date command above (e.g. 2026-04-25) and WORKSPACE_ROOT is
-the absolute path derived above.
+
+> Authoritative reference: [workflow-paths](../dev-workflow/context/workflow-paths.md) — canonical per-workflow layout per CC-05.7. The legacy `ai/plans/<X>.md` path is deprecated for new writes; the migration script `scripts/migrate-ai-layout.sh` (M-14) is the one-time tool for in-flight stories.
+
+Save to: `$WORKFLOW_DIR/plan.md`  (i.e. `ai/<YYYY-MM-DD>-<safe-id>/plan.md`)
+
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-01]
+     Reason: Switch the planner's write path from legacy `ai/plans/TODAY_<id>_<slug>.md` to the
+     canonical per-workflow `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` per CC-05.7 / GAP-21.
+     CC conventions applied: CC-05.7, CC-05.7.1 (safe-id normalisation), CC-04.3. -->
 
 The plan document must include:
 1. Story metadata (ID, title, sprint)
@@ -320,13 +396,14 @@ The plan document must include:
 
 ### 7. Create Task Tracker
 
-**Before saving**, run this command and capture the output as `TODAY`:
-```bash
-date -u +%Y-%m-%d   # UTC — canonical per orchestrator-rules #14
-```
-Save to: `$WORKSPACE_ROOT/ai/tasks/TODAY_<story-id>_<slug>.md`
-where TODAY is the output of the command above and WORKSPACE_ROOT is the same absolute path
-derived in Step 6.
+**Before saving**, the `$WORKFLOW_DIR` and `$TODAY` from Step 6 above are reused — the tracker lives in the same per-workflow directory as the plan.
+
+Save to: `$WORKFLOW_DIR/tracker.md`  (i.e. `ai/<YYYY-MM-DD>-<safe-id>/tracker.md`)
+
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-01]
+     Reason: Switch the tracker write path from legacy `ai/tasks/TODAY_<id>_<slug>.md` to the
+     canonical per-workflow `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` per CC-05.7.
+     CC conventions applied: CC-05.7, CC-04.3. -->
 
 Before writing the tracker, run `date -u +"%Y-%m-%d %H:%M UTC"` and use the output as the `Workflow started` value. All other metrics must remain `—` — they are filled in at their respective phase transitions, not now.
 
@@ -379,16 +456,9 @@ Format:
 | T-TEST-AuthService | AuthService | Test hardening | ⏳ Pending | — | — | Phase 5 |
 | T-TEST-BillingService | BillingService | Test hardening | ⏳ Pending | — | — | Phase 5 |
 
-Column definitions:
-- **Task ID**: T1, T2, ... for dev tasks; T-TEST-\<RepoName\> for Phase 5 test hardening
-- **Repo**: Must match a repo name from repos-paths.md
-- **Title**: Brief description of the task
-- **Status**: One of ⏳ Pending, 🔧 In Progress, 🔄 In Review, ✅ Done
-- **Reviewer Verdict**: ✅ Approved, 🔄 Changes Requested, or — (not yet reviewed)
-- **Commit(s)**: Squash-merge commit hash(es) filled in by the orchestrator after approval (— until then)
-- **Notes**: Must include `test-required: true` or `test-required: false`. For intra-repo dependencies, include the canonical `depends: T<n>[, T<n>...]` token (parsed by the orchestrator in Phase 3). Multiple Notes tokens are joined with ` · ` separators. Also note caveats or review comment references.
+**Column definitions, status enum, legal transitions, and Notes-token vocabulary are authoritative in [`tracker-schema.md`](tracker-schema.md).** The row template above shows the concrete shape the Planner writes — refer to the schema page for what each cell may legally contain.
 
-**Legend:** ⏳ Pending · 🔧 In Progress · 🔄 In Review · ✅ Done
+Quick legend (full enum in [`tracker-schema.md` → Status enum](tracker-schema.md#status-enum)): ⏳ Pending · 🔧 In Progress · 🔄 In Review · ✅ Done
 
 ---
 
@@ -432,7 +502,7 @@ flowchart LR
 | **Workflow started** | <!-- output of: date -u +"%Y-%m-%d %H:%M UTC" --> |
 | **Plan approved** | — |
 | **Development started** | — |
-| **Development completed** | — |
+| **Initial development completed** | — |
 | **Human approval (impl)** | — |
 | **Test hardening started** | — |
 | **Test hardening completed** | — |
@@ -521,8 +591,9 @@ mutating them would corrupt the trail.
 The amendment heading uses the round number passed by the orchestrator (`Round 1`
 on the first Phase 7 invocation, `Round 2` on a second round of PR comments, etc).
 
-Tracker format for amendment rows — identical column schema as the original
-table:
+Tracker format for amendment rows — same column schema as the original table
+(authoritative definition in [`tracker-schema.md`](tracker-schema.md) →
+*Task-row column schema*):
 
 ```markdown
 ## Amendments (PR Review Round <N>)
@@ -536,7 +607,9 @@ The `Notes` column **must** include the `PR-comment: [PC-<n>] thread_id=<...>`
 token so `review-response.md` Step 9 can later post replies on the original
 threads. The `thread_id` value is the REST integer comment ID for inline review
 threads or `general:<comment-id>` for top-level PR comments (per
-`skills/providers/<git-provider>/pr-comments.md`).
+`skills/providers/<git-provider>/pr-comments.md`). For the full Notes-token
+vocabulary across all sections, see [`tracker-schema.md` → Notes column
+tokens](tracker-schema.md#notes-column-tokens).
 
 ### Task ID continuation
 
@@ -550,6 +623,198 @@ Phase 5 hardening (it remains the single Phase 5 anchor per repo across rounds).
 
 Every amendment row MUST start in `⏳ Pending`. The `tracker-transition-guard`
 hook enforces this — appending a row already in `✅ Done` is rejected.
+
+## Ad-Hoc Task Mode (`MODE: ad-hoc-tasks`)
+
+When the orchestrator invokes this skill with `MODE: ad-hoc-tasks` (from
+`skills/dev-workflow/commands/handle-request.md` Step 6 after a batch of
+ad-hoc human requests has been triaged IN_SCOPE_BUG / IN_SCOPE_AC_MISS and
+confirmed at GATE #5), the skill appends new tasks to the existing tracker
+under a separate `## Ad-hoc Tasks (Batch <N>)` heading. Same row schema as
+the main table; separate heading so the original DAG stays readable and so
+Phase 3 re-entry can scope-filter on the section.
+
+### What changes in ad-hoc mode
+
+- **Skip Step 0a** (minimum-input gate), **Step 0** (Design Approach Selection),
+  and **Step 1** (pre-flight check for prior session work). The plan and
+  tracker already exist; design approach was settled in the original Phase 2.
+- **Skip Step 7's "Create Task Tracker"** for a fresh file. Open and modify
+  the existing tracker referenced in the orchestrator's prompt.
+- **Skip Step 8** (HUMAN GATE #1). The human gated this batch at GATE #5 in
+  `handle-request.md`. The append write-back must be silent.
+
+### What stays the same
+
+- Step 1b — re-read `repos-metadata.md` and verify each new task's `Repo`
+  value resolves to a configured repo.
+- Step 5 (Test Outline) — every ad-hoc task with `test-required: true` must
+  have a corresponding Test Outline entry appended to the plan file under a
+  new `## Test Outline — Ad-Hoc Batch <N>` heading. Follow the existing
+  `Subject_Scenario_Outcome` naming convention.
+- Step 5b (Test Pattern References) — applies to ad-hoc tasks too. Append
+  to the existing pattern-references section keyed by the new Task IDs.
+- Step 6 (Mermaid diagrams) — regenerate the **Dependency Graph** in the
+  tracker to include the new tasks (per the existing rendering rules above).
+  Ad-hoc tasks typically have no `depends:` token because they originate
+  from human observations rather than the original DAG, so they appear as
+  root nodes with the implicit Phase 5 edge into `T-TEST-<RepoName>`.
+
+### Ad-hoc row template
+
+Append new task rows under a new `## Ad-hoc Tasks (Batch <N>)` heading
+**below** any existing `## Amendments (PR Review Round …)` and prior
+`## Ad-hoc Tasks (Batch …)` headings — do NOT reorder, edit, or remove any
+existing rows. Existing rows record history; mutating them would corrupt
+the trail.
+
+The batch heading uses the round number passed by the orchestrator
+(`Batch 1` on the first ad-hoc invocation, `Batch 2` on the next, etc).
+The orchestrator derives the number from the count of existing
+`## Ad-hoc Tasks (Batch …)` headings in the tracker, plus one.
+
+Tracker format for ad-hoc rows — identical column schema as the original
+table:
+
+```markdown
+## Ad-hoc Tasks (Batch <N>)
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T<next-n> | <repo-name> | <≤ 60-char title> | ⏳ Pending | — | — | ad-hoc: [AHR-<n>] · source: <gate-2 \| gate-3 \| mid-phase> · submitted: <YYYY-MM-DD HH:MM UTC> · test-required: <true \| false> |
+```
+
+The `Notes` column **must** include the `ad-hoc: [AHR-<n>]` token — the
+Phase 3 re-entry filter in `handle-request.md` Step 7 and the
+`[AHR-<n>]` counter both rely on it. Do not rename it. Combine with the
+other Notes tokens via ` · ` separator following the existing convention.
+The full Notes-token vocabulary across all sections (including which tokens
+are mandatory for ad-hoc rows specifically) is documented in
+[`tracker-schema.md` → Notes column tokens](tracker-schema.md#notes-column-tokens).
+
+### Task ID continuation
+
+Identify the highest existing Task ID across the original table, any
+`## Amendments (PR Review Round …)` blocks, and any prior
+`## Ad-hoc Tasks (Batch …)` blocks (e.g. if the last task is `T8`, the
+first ad-hoc task is `T9`). T-TEST-`<RepoName>` rows are not part of the
+dev-task sequence and are not assigned to ad-hoc tasks — ad-hoc tasks
+reuse the existing T-TEST-`<RepoName>` row for their repo's Phase 5
+hardening (it remains the single Phase 5 anchor per repo across rounds
+and batches).
+
+### Workflow Metrics — Ad-Hoc Fields
+
+When MODE is `ad-hoc-tasks` and the tracker does not yet contain an
+`Ad-hoc requests started` row in the Workflow Metrics table, append the
+following two rows below the existing metrics (before the Task Metrics
+sub-section):
+
+```markdown
+| **Ad-hoc requests started** | <date -u +"%Y-%m-%d %H:%M UTC"> |
+| **Ad-hoc requests completed** | — |
+```
+
+`Ad-hoc requests started` is set on the first batch only — on subsequent
+batches, leave the existing value in place. `Ad-hoc requests completed`
+is owned by the orchestrator (`handle-request.md` Step 8) and remains `—`
+in the Planner's write.
+
+### Status transitions
+
+Every ad-hoc row MUST start in `⏳ Pending`. The `tracker-transition-guard`
+hook enforces this — appending a row already in `✅ Done` is rejected.
+
+## Plan Amendment Mode (`MODE: plan-amendment`)
+
+When the orchestrator invokes this skill with `MODE: plan-amendment` (from
+`skills/dev-workflow/commands/handle-request.md` Step 5 after the human
+chose **Expand scope** for an OUT_OF_SCOPE or PLAN_CONFLICT request), the
+skill amends the **plan file** to incorporate the new requirement, then
+returns. The amendment is gated separately by the orchestrator (a scoped
+GATE #1 re-presentation on the amendment delta) before any tracker rows
+are added — task creation happens in a subsequent `MODE: ad-hoc-tasks`
+invocation if the amendment is approved.
+
+### What changes in plan-amendment mode
+
+- **Skip Steps 0a / 0 / 1** as above (plan and tracker already exist).
+- **Skip Steps 5b through 8** — no tracker writes in this mode, no test
+  outline additions, no patterns. Those happen in the follow-up
+  `ad-hoc-tasks` invocation after the amendment is approved.
+- **Focus exclusively on the plan file**. Open the existing plan and
+  append a new `## Plan Amendment — Ad-Hoc Round <N>` section below the
+  existing Risk/Assumptions section. The round number matches the
+  ad-hoc batch number the amendment was raised in (derived by the
+  orchestrator from existing amendment-section headings).
+
+### Plan amendment section format
+
+```markdown
+## Plan Amendment — Ad-Hoc Round <N>
+
+**Triggered by**: [AHR-<n>] submitted at <YYYY-MM-DD HH:MM UTC>
+**Submission source**: <gate-2 | gate-3 | mid-phase>
+**Original classification**: <OUT_OF_SCOPE | PLAN_CONFLICT>
+**Human disposition**: Expand scope
+
+### Request
+<verbatim request text>
+
+### New requirement
+<one-paragraph statement of what the plan now covers — written as if it
+were part of the original Requirements Summary>
+
+### New acceptance criterion (if any)
+<numbered AC line(s) appended to the AC list — same shape as the original
+plan's AC section>
+
+### Plan delta
+<bulleted list of which sections of the plan are affected (Task
+breakdown, Cross-repo contracts, Test Outline, diagrams) and a brief
+description of what changes. The actual task rows are added in the
+follow-up `ad-hoc-tasks` invocation; this section records the design
+intent.>
+
+### Impact on existing tasks
+<which existing T<n> tasks, if any, must change behaviour as a result of
+this amendment. If none, write "None — amendment adds new tasks only.">
+```
+
+### Rules
+
+- Do NOT modify the original Requirements Summary, AC list, or Task
+  breakdown table in-place. All amendment content lives in its own
+  section so the original plan and its approval trail stay intact.
+- Do NOT touch the tracker in this mode. The orchestrator gates the
+  amendment first; if approved, a follow-up `ad-hoc-tasks` invocation
+  appends the tracker rows.
+- **Rollback is owned by the orchestrator, not by this skill.** Before
+  invoking `MODE: plan-amendment`, the orchestrator takes a `PLAN_SNAPSHOT`
+  via the Read tool **and persists a copy to disk** at
+  `<WORKSPACE_ROOT>/ai/.snapshots/<plan-basename>-<YYYY-MM-DD-HHMMSS>-<uid8>.md`
+  via the Write tool (see `handle-request.md` Step 5 → *Expand scope*).
+  The uid8 suffix prevents same-second collisions across concurrent
+  amendment flows. The
+  in-memory cache is the fast path; the on-disk copy is the durable
+  rollback that survives session crashes and `/compact` operations. If the
+  amendment is rejected at the scoped GATE #1 re-presentation, the
+  orchestrator restores the plan from whichever copy is available (prefer
+  in-memory, fall back to on-disk) via the Write tool, then deletes the
+  on-disk snapshot. On approval, the on-disk snapshot is deleted without
+  restore. The Planner is not asked to "undo" its own append. The
+  rationale: text-based undo via re-invocation is fuzzy and error-prone,
+  and for non-repo workspaces there is no committed prior state to
+  `git checkout`. The Read+Write snapshot pair is the only workspace-agnostic
+  rollback that always works, and `stop-failure-recovery.sh` scans the
+  `.snapshots/` directory at recovery time to surface orphan snapshots
+  from interrupted amendments.
+- If the human asks for the amendment to be reworked (rather than
+  accepted or rejected outright), the orchestrator re-invokes this skill
+  with the human's revision instructions; this mode edits the appended
+  section in place. The snapshot held by the orchestrator is not
+  invalidated — it stays the rollback target until the amendment is
+  approved (discard) or rejected (restore).
 
 ## Rules
 

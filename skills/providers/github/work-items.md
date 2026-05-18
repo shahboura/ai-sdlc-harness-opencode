@@ -155,7 +155,7 @@ See `skills/providers/shared/capabilities.md` for the canonical list and declara
 | `work_item.list_changelog` | 🟡 | Timeline events API — not exposed via current MCP toolset; fetch via `gh api repos/.../issues/<n>/timeline` |
 | `work_item.list_children` | 🟡 | No native parent/child — parse task lists in body or use `tracked-by` field |
 | `work_item.list_attachments` | ❌ | GitHub issues do not support file attachments via the issue API |
-| `work_item.transition_state` | 🟡 | Two states only (open/closed); use `gh issue close` / `gh issue reopen` |
+| `work_item.transition` | 🟡 | Two states only (open/closed); use `gh issue close` / `gh issue reopen` |
 | `work_item.search` | ✅ | `mcp__github__search_issues` or `gh issue list --search` |
 
 ## Planner Tool List (for agent frontmatter)

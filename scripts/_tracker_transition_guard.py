@@ -10,6 +10,8 @@ transition graph:
     🔄 In Review   → ✅ Done           (reviewer approved)
     🔄 In Review   → 🔧 In Progress    (changes requested)
     ✅ Done        → 🔧 In Progress    (rework)
+    ✅ Done        → 📦 Archived       (P8 reconcile — M-07)
+    📦 Archived    → 🔧 In Progress    (hotfix clone — M-19; operates on a clone, original row preserved)
 
 Covers `Write`, `Edit`, and `MultiEdit` — applies the edit in-memory to the
 on-disk file content, then diffs task-row statuses by task ID and validates
@@ -26,6 +28,11 @@ pre-state to compare against and the write passes through.
 Reads the hook payload file path from argv[1].
 
 Exit 0 = allow, Exit 2 = block.
+
+Changed by: dev-workflow-plan.md [M-07] [IMPL-07-04]
+Reason: Add `Archived` as a terminal state reachable from `Done` (P8 reconcile);
+        per `agents/shared/tracker-transition-rules.md`, the FSM is authoritative.
+CC conventions applied: CC-03.3, CC-04.5 (defers FSM to shared transition-rules).
 """
 from __future__ import annotations
 
@@ -40,13 +47,15 @@ _EMOJI_TO_KEY = {
     "🔧": "in_progress",
     "🔄": "in_review",
     "✅": "done",
+    "📦": "archived",
 }
 
 _LEGAL: dict[str, set[str]] = {
     "pending": {"in_progress"},
     "in_progress": {"in_review"},
     "in_review": {"done", "in_progress"},
-    "done": {"in_progress"},
+    "done": {"in_progress", "archived"},
+    "archived": {"in_progress"},  # M-19 hotfix clone — operates on a clone, original row policy-bounded
 }
 
 _LABEL = {
@@ -54,10 +63,16 @@ _LABEL = {
     "in_progress": "🔧 In Progress",
     "in_review": "🔄 In Review",
     "done": "✅ Done",
+    "archived": "📦 Archived",
     "NONE": "(new row)",
 }
 
-_TRACKER_PATH_RE = re.compile(r"(^|/)ai/tasks/")
+# Matches BOTH the legacy layout (ai/tasks/<X>.md) AND the new per-workflow
+# layout (ai/<YYYY-MM-DD>-<work-item-id>/tracker.md or tracker.archived.md or
+# tracker.aborted.md) per M-14 IMPL-14-05.
+_TRACKER_PATH_RE = re.compile(
+    r"(^|/)ai/(tasks/|\d{4}-\d{2}-\d{2}-[\w.-]+/tracker(\.archived|\.aborted)?\.md$)"
+)
 # Task IDs always start with T and contain word chars / dot / hyphen. This
 # pattern also matches table-header words like "Task" or "Type"; those cells
 # never carry a status emoji, so `_parse_task_statuses` simply finds no
@@ -205,6 +220,8 @@ def main() -> int:
     print("  🔄 In Review   → ✅ Done           (reviewer approved)", file=sys.stderr)
     print("  🔄 In Review   → 🔧 In Progress    (changes requested)", file=sys.stderr)
     print("  ✅ Done        → 🔧 In Progress    (rework)", file=sys.stderr)
+    print("  ✅ Done        → 📦 Archived       (P8 reconcile — M-07)", file=sys.stderr)
+    print("  📦 Archived    → 🔧 In Progress    (hotfix clone — M-19)", file=sys.stderr)
     print(f"File: {file_path}", file=sys.stderr)
     return 2
 

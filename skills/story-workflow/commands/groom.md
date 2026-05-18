@@ -140,8 +140,14 @@ If the user wants changes, iterate. Technical analysis benefits from developer i
 the user may know about planned refactors, tech debt, or constraints that aren't visible
 in the code.
 
-If confirmed, use the **add comment** tool from the provider adapter to add the technical
-notes as a comment on the work item.
+If confirmed:
+
+- **For ADO / Jira / GitLab / GitHub / Zoho** (every provider that declares `work_item.add_comment`): use the **add comment** tool from the active provider adapter to add the technical notes as a comment on the work item.
+- **For `local-markdown`**: the adapter has no `work_item.add_comment` capability and the source story file is intentionally not overwritten by groom (overwriting would replace the user's story with technical notes, losing the story). Two viable persistence paths — ask the user:
+  1. **Save as a sibling file** (`<story-basename>-technical-notes.md`) via the `Write` tool. Recommended.
+  2. **Append a `## Technical Notes` section to the source story file** via the `Edit` tool, if and only if the source file already has a `## Technical Notes` heading (per the recommended local-markdown story template) — otherwise prefer the sibling file to avoid mutating an unstructured story.
+
+  If the user declines both, the technical notes stay in the conversation for manual copy.
 
 ## Important
 

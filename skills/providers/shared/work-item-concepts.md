@@ -1,5 +1,8 @@
 # Work Item Concept Definitions
 
+> Owner: cross-cutting
+> Version: 1.0
+
 Canonical definitions for the generic concepts used in all provider Field Mapping tables.
 Each provider's `work-items.md` maps these concepts to provider-specific fields.
 

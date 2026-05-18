@@ -38,7 +38,11 @@ provider.
 
 ## Pre-Flight Checks
 
-1. **Read ALL tracker files** in `ai/tasks/` matching `*$ARGUMENTS[0]*`.
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-02]
+     Reason: Read both layouts per CC-05.7 / workflow-paths.md.
+     CC conventions applied: CC-05.7, CC-04.3. -->
+
+1. **Read the tracker** for `$ARGUMENTS[0]`. Prefer the new canonical layout (`ai/*-<work-item-id>/tracker.md` — one tracker per per-workflow directory per [workflow-paths](../dev-workflow/context/workflow-paths.md)); fall back to the legacy layout (`ai/tasks/*<id>*.md`) during the migration window.
 2. **Verify** every task (including T-TEST / T-TEST-\<RepoName\>) has status ✅ Done.
 3. If any task is not done, **STOP** and report which tasks remain.
 4. **If repo name provided** (`$ARGUMENTS[2]`): read `.claude/context/repos-paths.md`
@@ -112,6 +116,32 @@ carry review comments, reviewers, or CI runs the orchestrator can't see. On `[1]
 Step 6 entirely and proceed to Step 7 with the existing PR's metadata. On `[2]`, exit
 without making any changes.
 
+**Output contract — `Reuse:` flag.** When this skill returns to the caller (typically
+`commands/create-pr.md` Step 7), it MUST report whether the PR was newly created or
+reused, so the caller can take the right Step 9 path. The skill (run inline in the
+orchestrator session, not as a subagent) has no `📋 AGENT STATUS` analogue, so the
+output contract is a **literal terminator block** the orchestrator-side parser can grep
+against deterministically. Emit it as the last thing the skill prints, exactly as shown
+below — no surrounding prose, no leading bullets, no code-fence wrapping:
+
+```
+--- PR CREATOR RESULT ---
+Reuse: <true | false>
+PR URL: <url>
+PR Number: <number>
+PR State: <open | draft>
+```
+
+The `--- PR CREATOR RESULT ---` line is the parser anchor. The four fields below it are
+fixed-name, one-per-line. Empty values for unknown fields are not allowed — surface a
+specific value or skip the field (and the caller treats the absence as a parse error).
+
+`Reuse: true` is set whenever Step 0 detected an existing PR and the human picked `[1]`.
+`Reuse: false` is set in every other case (no existing PR found, or `pr.find_for_branch`
+declared `❌`). The flag is consumed by `commands/create-pr.md` Step 9 to decide between
+the amend+force-push path (create) and the fresh-commit+fast-forward path (reuse) — see
+that file for the rationale.
+
 ### 1. Validate Branch Name
 
 Verify the branch in the target repo follows the convention:
@@ -162,9 +192,25 @@ Where `<ID-DISPLAY>` follows the work item provider's format:
 - GitLab: `#123`
 - GitHub: `#123`
 
-### 4. Wait for Human Approval
+### 4. Pre-Push Preflight Summary (non-interactive)
 
-> **🚦 GATE: Please respond with APPROVED to create this PR/MR, or describe changes.**
+The authoritative human gate for PR creation is **GATE #3 in `commands/create-pr.md` Step 5** — it has already cleared by the time this skill runs (the orchestrator only invokes pr-creator on `PR_MODE: standard` / `PR_MODE: draft`). Do **not** re-prompt the human here; a second gate creates two-prompt fatigue, erodes the signal value of GATE #3, and the harness's pattern is one gate per decision.
+
+Instead, emit a terse non-blocking preflight line so the human can sanity-check what is about to fire — then proceed directly to Step 5:
+
+```
+## pr-creator preflight — about to push and create
+- Repo: <repo-name> (<repo-path>)
+- Push target: origin
+- Branch: <feature-branch>
+- Target: <default-branch>
+- PR mode: <standard | draft>
+- Idempotency: <create | reuse PR/MR #<id>>
+```
+
+The preflight line is informational only; the orchestrator does not wait for input.
+
+> **Note for direct `/pr-creator` invocations** (outside the `/dev-workflow create-pr` pipeline): the caller is responsible for sequencing its own human gate before invoking this skill — pr-creator is non-interactive by design. The two callers in tree are `commands/create-pr.md` Step 7 (gated by GATE #3) and tooling tests; both satisfy this contract.
 
 ### 5. Push Branch to Remote
 
@@ -295,6 +341,13 @@ The linking mechanism depends on the **combination** of work item provider and g
 | Jira | ADO | `mcp__jira__add_remote_link` with ADO PR URL |
 | GitLab | GitHub | `Closes owner/repo#IID` cross-reference |
 | GitHub | GitLab | `Closes group/project#NUMBER` cross-reference |
+
+**CLI git providers (`gh-cli`, `glab-cli`)** — use the same linking mechanism as their MCP-backed equivalents. The CLI is just an alternate transport for the same underlying provider:
+
+- `gh-cli` ≡ `GitHub` for linking — when `gh-cli` is the git provider, apply every row above that has `GitHub` in the *Git Provider* column. The keyword (`Closes #NUMBER` / `Closes owner/repo#NUMBER`) lands in the PR body via `gh pr create --body`, behaving identically to the MCP path.
+- `glab-cli` ≡ `GitLab` for linking — same substitution. The keyword lands in the MR description via `glab mr create --description`.
+
+The PR-creation commands themselves differ between the MCP and CLI transports (see [Section 6](#6-create-prmr-for-each-affected-repo) — `gh pr create` / `glab mr create` vs the MCP `mcp__github__create_pull_request` / `mcp__gitlab__create_merge_request`), but the linking keyword and its consumer are unchanged.
 
 **If work item provider ≠ git provider:**
 1. Create the PR/MR via the git provider (Step 6).

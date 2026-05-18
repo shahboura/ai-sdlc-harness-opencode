@@ -139,7 +139,7 @@ See `skills/providers/shared/capabilities.md` for the canonical list and declara
 | Capability | Status | Notes |
 |------------|--------|-------|
 | `pr.create` | ✅ | `glab mr create` |
-| `pr.find_for_branch` | ✅ | `glab mr list --source-branch <branch> --state opened --output json --per-page 1` |
+| `pr.find_for_branch` | 🟡 | `glab mr list --source-branch <branch> --state opened --output json --per-page 1` — may return 404 on self-hosted instances; see Troubleshooting below |
 | `pr.link_work_item` | 🟡 | Emulated — `Closes #IID` keyword in MR description auto-links and auto-closes the issue |
 | `pr.set_draft` | ✅ | `--draft` flag (or `Draft:` title prefix) |
 
@@ -170,3 +170,22 @@ are declared separately in [`pr-comments.md`](./pr-comments.md).
 8. **--repo flag**: If `glab` is run from inside the repo directory, `--repo` can be omitted
    and glab infers the project from the git remote. Use explicit `--repo` for clarity in
    automated workflow execution.
+
+## Troubleshooting
+
+### `glab mr list` returns 404
+
+On self-hosted GitLab instances, `glab mr list --repo <group>/<project>` may
+fail with a 404 if the CLI cannot resolve the project path. Use the REST API
+fallback:
+
+1. Resolve the numeric project ID:
+   ```bash
+   glab api "projects?search=<project-name>" | python3 -c \
+     "import sys,json; [print(p['id'], p['path_with_namespace']) for p in json.load(sys.stdin)]"
+   ```
+2. List open MRs for the branch by project ID:
+   ```bash
+   glab api "projects/<id>/merge_requests?source_branch=<branch>&state=opened&per_page=1"
+   ```
+3. Use the returned `iid` as the MR identifier for subsequent operations.

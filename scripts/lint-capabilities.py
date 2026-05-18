@@ -28,7 +28,7 @@ WORK_ITEM_CAPS = [
     "work_item.list_changelog",
     "work_item.list_children",
     "work_item.list_attachments",
-    "work_item.transition_state",
+    "work_item.transition",
     "work_item.search",
 ]
 PR_CAPS = [
@@ -107,6 +107,38 @@ def cap_has_status(section: str, cap: str) -> tuple[bool, str | None]:
     return False, None
 
 
+# M-09 IMPL-09-01: shared-ref citation checks (CC-04.3 / CC-04.5).
+# Two new checks: every work-items.md must cite `work-item-concepts`; every
+# pull-requests.md / merge-requests.md (git providers only) must cite `pr-conventions`.
+# Jira's pull-requests.md is a stub explaining Jira-isn't-a-git-provider — the lint
+# skips citation checks for non-git providers via the SHARED_REF_SKIP_LIST below.
+SHARED_REF_PATTERNS = {
+    "work-items.md": "work-item-concepts",
+    "pull-requests.md": "pr-conventions",
+    "merge-requests.md": "pr-conventions",
+}
+# Work-item-only providers whose pull-requests.md (if present) is a stub.
+SHARED_REF_SKIP_LIST = {
+    ("jira", "pull-requests.md"),
+    ("zoho", "pull-requests.md"),
+    ("local-markdown", "pull-requests.md"),
+}
+
+
+def _lint_shared_ref(provider: str, filename: str, text: str) -> list[str]:
+    needle = SHARED_REF_PATTERNS.get(filename)
+    if not needle:
+        return []
+    if (provider, filename) in SHARED_REF_SKIP_LIST:
+        return []
+    if needle not in text:
+        return [
+            f"{provider}/{filename}: missing `{needle}` citation "
+            f"(CC-04.3 — adapters must cite shared `{needle}.md`)"
+        ]
+    return []
+
+
 def lint_adapter(provider: str, filename: str) -> list[str]:
     """Lint one adapter file. Return a list of failure messages."""
     path = PROVIDERS_DIR / provider / filename
@@ -137,6 +169,9 @@ def lint_adapter(provider: str, filename: str) -> list[str]:
                 f"{provider}/{filename}: required capability `{cap}` declared "
                 f"`{status}` — must be ✅ for the provider to be usable"
             )
+
+    # M-09 IMPL-09-01: shared-ref citation check.
+    failures.extend(_lint_shared_ref(provider, filename, text))
 
     return failures
 
