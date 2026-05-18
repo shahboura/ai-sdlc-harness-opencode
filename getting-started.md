@@ -4,7 +4,7 @@ This is the 10-minute path from "I just heard about this" to "the harness is imp
 
 ## What you're about to do
 
-Install a Claude Code plugin, run a one-time workspace setup that scans your local repos and writes context files, then kick off `/dev-workflow` against a real work item. The harness pauses at **five human gates** along the way — those are where you make decisions, not the agents.
+Install a Claude Code plugin, run a one-time workspace setup that scans your local repos and writes context files, then kick off `/dev-workflow` against a real work item. The harness pauses at **up to six human gates** along the way — those are where you make decisions, not the agents.
 
 ## Before you start
 
@@ -59,7 +59,7 @@ Pick a real work item (or write a quick markdown story if you're on `local-markd
 /dev-workflow <Work-Item-ID>
 ```
 
-The harness will go through up to 9 phases plus 2 cross-cutting ones. Five of them stop and wait for you:
+The harness will go through up to 9 phases plus 2 cross-cutting ones. Up to six of them stop and wait for you:
 
 - **GATE 1 (after planning)** — the Planner proposes one or more implementation approaches and a Test Outline. You pick one. Nothing is coded until you do.
 - **GATE 2 (after the TDD loop)** — every task has been written (tests first by the Tester, then code by the Developer, then reviewed by the Reviewer). You see the full implementation and approve it before test hardening begins.
@@ -167,7 +167,7 @@ If you need an ad-hoc item to run *before* more main-table work proceeds, raise 
 
 The most common issues on a first run:
 
-- **Worktree creation fails on Windows** (`could not lock config file`). The Developer reports this and the orchestrator re-runs without worktree isolation. No action needed from you.
+- **Worktree creation fails on Windows** (`could not lock config file`). The orchestrator owns the `git worktree add`, retries once, and on a second failure falls back to working directly on the feature branch — the Developer / Tester never see the failure and the agent reports `Worktree: not used (direct branch)`. No action needed from you.
 - **A build/test command isn't in the allowlist.** The hook will block it with a clear message. Run `/init-workspace --refresh-permissions` to re-propose the allowlist.
 - **The Reviewer flags issues you disagree with.** Push back in the gate response — the orchestrator will route your feedback to the right agent.
 - **A task gets stuck in a review-fix loop.** Two rounds of "changes requested" usually means the plan was wrong, not the code. Reject at the gate and ask the Planner to revisit.
