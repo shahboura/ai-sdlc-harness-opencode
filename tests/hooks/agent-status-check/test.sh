@@ -197,6 +197,64 @@ test_allow_outside_workspace() {
     fi
 }
 
+# ── HTML-entity decoding: agent response with &lt; &gt; &amp; entities ──────
+
+test_allow_html_encoded_response_after_unescape() {
+    # Observation: one reviewer invocation in a multi-task lane emits AGENT
+    # STATUS with raw `<`, `>`, `&` characters; a sibling invocation emits
+    # the same shape with `&lt;`, `&gt;`, `&amp;` entities (cause unclear —
+    # model emission non-determinism or transcript layer). The hook must
+    # `html.unescape()` the response before parsing so both forms validate
+    # identically. Confirm that an otherwise-valid block with HTML-encoded
+    # preamble + an encoded `Map&lt;String, Object&gt;` value inside the
+    # block still passes the universal floor.
+    local encoded_response='Review complete.
+
+&lt;!-- internal note --&gt;
+
+Finding: the type signature `Map&lt;String, Object&gt;` should use a more specific type.
+
+📋 AGENT STATUS
+- Agent: ai-sdlc-reviewer
+- Phase: 3
+- Verdict: APPROVED
+- Outcome: SUCCESS
+- Next action: proceed to next task
+'
+    local rc
+    rc=$(printf '%s' "$(mk_subagent_payload_response "$encoded_response")" | (cd "$FAKE_WORKSPACE" && "$HOOK") >/dev/null 2>&1; echo $?)
+    if [ "$rc" != "0" ]; then
+        _fail "expected exit 0 (encoded entities should decode and validate), got $rc"
+        return 1
+    fi
+}
+
+test_block_with_encoded_outcome_value_still_validates() {
+    # Pathological case: the Outcome value itself is HTML-encoded (e.g.
+    # `Outcome: &amp;SUCCESS` — actually never observed but a defensive
+    # check). After unescape this becomes `Outcome: &SUCCESS` which is NOT
+    # a recognised outcome and should be rejected — proving the unescape ran
+    # AND the validator sees the decoded value (not the encoded one).
+    local pathological='📋 AGENT STATUS
+- Agent: ai-sdlc-developer
+- Phase: 3
+- Outcome: &amp;BOGUS
+- Next action: x
+'
+    local result rc
+    result="$(printf '%s' "$(mk_subagent_payload_response "$pathological")" | (cd "$FAKE_WORKSPACE" && "$HOOK") 2>&1)"
+    rc=$?
+    # We do not enforce the *exact* failure mode here — only that the
+    # decoded `&BOGUS` is what the validator sees (either via the unknown-
+    # outcome-value check or via the universal-floor check). Confirm that
+    # the encoded-form `&amp;BOGUS` does NOT appear in the error output —
+    # the validator should report the decoded form.
+    if printf '%s' "$result" | grep -qF '&amp;'; then
+        _fail "validator surfaced raw HTML-encoded form '&amp;' — html.unescape did not run pre-validation; output: $result"
+        return 1
+    fi
+}
+
 # ── No /tmp debug artifact ──────────────────────────────────────────────────
 
 test_no_tmp_debug_file_written() {

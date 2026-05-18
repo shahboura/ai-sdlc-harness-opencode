@@ -16,7 +16,7 @@ Blocks Bash commands that write to paths the harness considers protected:
   1. Anything that writes under `./ai/` from a Bash call. The harness's
      ai/ directory (plans, trackers) is owned by orchestrator/planner
      Write/Edit calls — never shell-driven mutations. Closes the
-     "echo ... > ai/tasks/...md" loophole.
+     "echo ... > ai/<workflow-dir>/...md" loophole.  CC-05.7-OK: docstring example
 
   2. Anything that writes to a sensitive file pattern (`.env*`, `*.pem`,
      `id_rsa*`, etc.). Extends `sensitive-file-guard.sh` to Bash.
@@ -46,7 +46,11 @@ import re
 import shlex
 import sys
 
+# Changed by: dev-workflow-plan.md [M-01] [IMPL-01-08]
+# Reason: Delegate subagent-type detection to shared `_subagent_utils` (TEST-15 / CC-04.3 / CC-08.1).
+# CC conventions applied: CC-04.3 (Python `from` import), CC-08.1 (DRY extraction).
 from _sensitive_patterns import matches_sensitive as _matches_sensitive_basename
+from _subagent_utils import normalize_agent_type
 
 
 _HEREDOC_RE = re.compile(
@@ -268,28 +272,11 @@ def _extract_write_targets(cmd: str) -> list[tuple[str, str]]:
 def _detect_subagent(payload: dict) -> str | None:
     """Identify the calling subagent from the hook payload.
 
-    Canonical field per Claude Code docs is `agent_type` (present only when
-    the hook fires inside a subagent call). Values may be namespaced as
-    `plugin:directory:name`; we normalise to the last segment, then lower.
-    Older/alternate field names are checked as a defensive fallback.
+    Delegates to `_subagent_utils.normalize_agent_type` per CC-04.3 / CC-08.1
+    (M-01 IMPL-01-08). The wrapper is preserved so callsites keep a stable
+    name; the implementation lives in the shared helper.
     """
-    raw: str | None = None
-    for key in ("agent_type", "subagent_type", "subagent_name", "agent_name", "agentName", "subagent"):
-        v = payload.get(key)
-        if isinstance(v, str) and v.strip():
-            raw = v.strip()
-            break
-    if raw is None:
-        env_v = os.environ.get("CLAUDE_SUBAGENT_NAME", "").strip()
-        if env_v:
-            raw = env_v
-    if raw is None:
-        return None
-    # Normalise namespaced ids like "ai-sdlc-harness:reviewer:reviewer".
-    for sep in (":", "/"):
-        if sep in raw:
-            raw = raw.rsplit(sep, 1)[-1]
-    return raw.lower() or None
+    return normalize_agent_type(payload)
 
 
 def main() -> int:

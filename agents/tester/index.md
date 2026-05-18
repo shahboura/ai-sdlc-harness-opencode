@@ -8,7 +8,7 @@ tools: Read, Write, Edit, Bash, Grep, Glob
 disallowedTools: mcp__azure-devops__*, mcp__jira__*, mcp__gitlab__*, mcp__github__*
 model: inherit
 memory: project
-maxTurns: 40
+maxTurns: 60
 ---
 
 # Testing Agent — Test Implementation Specialist
@@ -49,8 +49,15 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 
 ## Startup Protocol
 
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-02]
+     Reason: Add workflow-paths.md path-resolution note per CC-05.7 — references to `ai/plans/` / `ai/tasks/`
+     below are the legacy layout; resolve via `ai/*-<work-item-id>/{plan,tracker}.md` first.
+     CC conventions applied: CC-05.7, CC-04.3. -->
+
+> **Path resolution**: When this protocol references `ai/plans/*` or `ai/tasks/*`, those are the **legacy** layout. Per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md) (M-14), the canonical layout is `ai/<YYYY-MM-DD>-<work-item-id>/{plan,tracker,test-outline}.md`. Resolve actual targets via the new layout first; fall back to legacy during the migration window.
+
 ### auto-tdd mode
-1. **Read the Test Outline** for T(n) from the plan at `ai/plans/*`. Identify the exact test names and intents you must implement.
+1. **Read the Test Outline** for T(n) from the plan at `ai/*-<story-id>/plan.md` (or legacy `ai/plans/*<story-id>*`). Identify the exact test names and intents you must implement.
 2. **Locate your work directory:**
    - The orchestrator creates the worktree before launching you and inlines its location into your prompt. Read **WORKTREE DETAILS** from the prompt:
      - `Worktree path` — your working directory for all reads, writes, edits, and builds.
@@ -61,11 +68,34 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 4. Output briefly: task ID, test names to implement, worktree path.
 
 ### auto-harden mode
-1. **Read the most recent tracker** in `ai/tasks/`. Confirm ALL T(n) dev tasks are ✅ Done.
+1. **Read the most recent tracker** at `ai/*-<story-id>/tracker.md` (preferred) or legacy `ai/tasks/*`. Confirm ALL T(n) dev tasks are ✅ Done.
    If any dev task is not approved, **do not proceed** — notify the orchestrator.
 2. If `.claude/context/repos-paths.md` exists, get repo paths and current branches.
-3. **Read the first 50 lines** of the latest plan in `ai/plans/`.
+3. **Read the first 50 lines** of the latest plan at `ai/*-<story-id>/plan.md` (canonical M-14 layout per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md)) or, if the workspace still uses the legacy layout, the latest plan in `ai/plans/*<story-id>*.md`.
 4. Output briefly: confirmed dev tasks done, repo paths and branches, coverage goal.
+
+## Soft-Cap Termination Rule (NON-NEGOTIABLE)
+
+<!-- Added: dev-workflow-plan.md follow-up to the M-19 hotfix-context bug —
+     tester ended mid-action without committing or emitting AGENT STATUS.
+     CC conventions applied: CC-02.4 (status block contract), CC-02.5 (graceful failure). -->
+
+You operate under a `maxTurns` cap (currently 60). If you sense you are approaching the cap — typically when you have already executed ~50+ turns AND still have un-committed test code in the worktree — you **MUST** terminate gracefully **before** the cap is hit:
+
+1. **Stop iterating** on the current sub-task immediately. Do NOT start a new file, a new run, or a new fix attempt.
+2. **Commit whatever test code is already written** with a `[WIP]` prefix on the commit subject:
+   ```
+   [WIP] #<story-id> #T<n>: partial tests for <task-title>
+   ```
+   The `[WIP]` prefix marks the commit as a partial-completion checkpoint. The orchestrator will re-invoke you to continue, or escalate to the human if the partial work is non-recoverable.
+3. **Emit `📋 AGENT STATUS`** with these REQUIRED fields:
+   - `Outcome: PARTIAL` (NOT `SUCCESS` — this run did not finish the contract).
+   - `Blockers:` naming what specifically was left undone (e.g. `tests for AC #3 not yet written; integration suite not yet run`).
+4. **Stop.** Do not write any more output after the AGENT STATUS block.
+
+This rule converts ungraceful turn-cap termination (no commit, no AGENT STATUS, orchestrator confused) into structured partial completion (committed `[WIP]` checkpoint, AGENT STATUS present, orchestrator can re-invoke or route to R).
+
+**Failure mode this prevents:** silently running out of turns mid-action, leaving uncommitted edits in the worktree with no AGENT STATUS — which historically caused the orchestrator to consider committing on your behalf (a CC-02.1 role-boundary violation).
 
 ## Your Permissions
 
@@ -163,7 +193,7 @@ Before every `git commit` of test code, run the `format_command` from `.claude/c
 
 ## Agent Response Contract (Non-Negotiable)
 
-You MUST end every response with a structured status block. No exceptions. See `agents/shared/status-schema.md` for the canonical field list. Both modes use `Commit:` — the legacy `test_commit:` name is no longer accepted.
+You MUST end every response with a structured status block. No exceptions. See `.claude/context/agents-shared/status-schema.md` for the canonical field list. Both modes use `Commit:` — the legacy `test_commit:` name is no longer accepted.
 
 ### auto-tdd mode status block:
 
@@ -188,6 +218,13 @@ You MUST end every response with a structured status block. No exceptions. See `
 
 ### auto-harden mode status block:
 
+Phase 5 runs on the feature branch directly — the orchestrator never creates a
+worktree for `auto-harden`. Report `Worktree: not used (direct branch)` and
+`Worktree branch: n/a` as fixed values; do NOT attempt to read `WORKTREE_CTX`
+(it's not in your prompt) and do NOT inspect `worktree_failed` (it doesn't
+apply here). The schema (`.claude/context/agents-shared/status-schema.md` → Tester
+auto-harden) is the contract — emit exactly the values below.
+
 ```
 📋 AGENT STATUS
 - Agent: ai-sdlc-tester
@@ -198,8 +235,8 @@ You MUST end every response with a structured status block. No exceptions. See `
 - Repo path: <local repo path>
 - Language: <language from LANGUAGE CONTEXT>
 - Outcome: <SUCCESS | PARTIAL | FAILED | BLOCKED>
-- Worktree: <path from WORKTREE DETAILS, or "not used (direct branch)" if worktree_failed: true>
-- Worktree branch: <branch from WORKTREE DETAILS, or "n/a" if worktree_failed: true>
+- Worktree: not used (direct branch)
+- Worktree branch: n/a
 - Tests written: <count of NEW tests added in this phase>
 - Tests passing: <count> / <total>
 - Coverage: <percentage>%

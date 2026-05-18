@@ -18,6 +18,25 @@ Runs the repo's configured coverage command, locates the output file, dispatches
 parsing based on `coverage_format`, and produces a structured coverage report.
 No per-language logic lives in this skill — everything comes from discovered config.
 
+## Scope — important
+
+> **This skill reports whole-file / whole-package coverage, NOT diff-aware coverage.**
+> Every parser (cobertura, jacoco, lcov, json-summary, go-cover) extracts an aggregate
+> `line_pct` for the file or package, never a count of executed lines among
+> "lines that changed in this story." The harness's policy *"≥ 90% line coverage
+> on new/modified code only"* (see `CLAUDE.md`, `commands/test.md`,
+> `agents/reviewer/index.md`) is therefore a **necessary-not-sufficient** check
+> at this skill's boundary: a whole-file pass implies the new code is likely
+> covered, but a whole-file fail does NOT prove the new code is uncovered (the
+> miss may be in pre-existing lines this story did not touch).
+>
+> **Caller responsibility**: the Tester / Reviewer / `commands/test.md` orchestrator
+> MUST inspect the per-file breakdown for files this story modified (use the
+> standard `git diff --name-only <feature-branch>...<default-branch>` glob) and
+> confirm the threshold is met against THOSE files, not the repo aggregate. The
+> Reviewer's `Test coverage (new/modified code):` field in the pre-PR status block
+> carries that judgement — it is not auto-computed by this skill.
+
 ## Pre-Flight: Resolve Target Repo
 
 1. Read `.claude/context/language-config.md`.

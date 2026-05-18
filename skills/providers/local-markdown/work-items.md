@@ -126,7 +126,17 @@ Brief context — the "why" behind this story (2-4 sentences).
 - **Type**: File path string (absolute or relative)
 - **Display**: Filename only (e.g., `auth-story.md`)
 - **Short ID for commit messages**: Filename without extension (e.g., `auth-story`)
-- **In commit messages**: `auth-story #T1: description` (filename-without-ext + task ref)
+- **In commit messages**: prefix the short ID with `#` so the subject matches the harness-wide convention enforced by `validate-commit-msg`. The validator's story-ID slot accepts alphanumerics plus `.`, `_`, `-` — filenames with those characters are fine; spaces or other punctuation are not.
+
+  | Phase | Subject |
+  |-------|---------|
+  | Phase 3 tester (TDD) | `#auth-story #T1 test: <slug>` |
+  | Phase 3 developer (TDD) | `#auth-story #T1 impl: <slug>` |
+  | Phase 3 non-TDD | `#auth-story #T1: <slug>` |
+  | Phase 5 hardening | `#auth-story test-harden: <slug>` |
+  | Phase 6 plan commit | `#auth-story #TPLAN: add approved implementation plan` |
+  | Phase 6 tracker commit | `#auth-story #TTRACKER: add task tracker with final workflow state` |
+  | Phase 7 tracker update | `#auth-story #TPR-RESP: record PR review response completion` |
 
 ## Field Mapping Summary
 

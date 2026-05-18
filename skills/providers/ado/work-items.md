@@ -145,7 +145,7 @@ See `skills/providers/shared/capabilities.md` for the canonical list and declara
 | `work_item.list_changelog` | ✅ | `mcp__azure-devops__wit_list_work_item_revisions` |
 | `work_item.list_children` | ✅ | Parse `relations[]` for `System.LinkTypes.Hierarchy-Forward` from `wit_get_work_item(expand="relations")` |
 | `work_item.list_attachments` | ✅ | Parse `relations[]` for `AttachedFile` entries |
-| `work_item.transition_state` | ✅ | `mcp__azure-devops__wit_update_work_item` with the State field set to the target state name |
+| `work_item.transition` | ✅ | `mcp__azure-devops__wit_update_work_item` with the State field set to the target state name |
 | `work_item.search` | ✅ | `mcp__azure-devops__search_workitem` |
 
 ## Planner Tool List (for agent frontmatter)

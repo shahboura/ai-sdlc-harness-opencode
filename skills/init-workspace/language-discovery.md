@@ -36,7 +36,7 @@ For each repo, read the evidence map and a targeted sample of file contents (e.g
 
 - **language** (free-form, e.g. `python`, `typescript`, `rust`, `dotnet`, `go`, `java`)
 - **runtime_version** (e.g. `3.12`, `20`, `1.78`, `net10.0`, `1.22`, `21`)
-- **Commands:** `restore_command`, `build_command`, `test_command`, `coverage_command`, `format_command` (the `format_command` must include `{FILE}` and `{PROJECT_ROOT}` placeholders — the auto-format hook substitutes them at runtime)
+- **Commands:** `restore_command`, `build_command`, `test_command`, `coverage_command`, `format_command`. **All commands are self-contained shell strings.** The developer and tester agents invoke them verbatim at the repo root — no placeholder substitution happens anywhere in the harness. Earlier versions of this schema documented `{FILE}` / `{PROJECT_ROOT}` placeholders for `format_command` with the intent that an auto-format hook would substitute them at runtime; that hook was never implemented, so the placeholders silently broke the format step. If you need change-aware formatting, encode the file selection in the command itself (e.g. `poetry run ruff format $(git diff --cached --name-only --diff-filter=ACMR | grep '\.py$' || echo .)`); if a whole-project format is acceptable, the simpler form `poetry run ruff format .` works.
 - **coverage_format:** one of `cobertura`, `jacoco`, `lcov`, `json-summary`, `go-cover`, `none`
 - **Regex patterns** for parsing build/test output:
   - `build_error_pattern`
@@ -77,7 +77,7 @@ Detected for AuthService:
   Test:            poetry run pytest
   Coverage:        poetry run pytest --cov=src --cov-report=xml
   Coverage format: cobertura
-  Format:          poetry run ruff format {FILE}
+  Format:          poetry run ruff format .
   Framework:       FastAPI
   Architecture:    layered
   Naming:          snake_case files, PascalCase classes
@@ -148,7 +148,7 @@ This is the full schema written to `.claude/context/language-config.md`. Every f
 - coverage_format: "cobertura | jacoco | lcov | json-summary | go-cover | none"
 - coverage_output_glob: "<glob>"
 - coverage_threshold: 90
-- format_command: "<cmd with {FILE} and {PROJECT_ROOT} placeholders>"
+- format_command: "<self-contained shell command, run verbatim at the repo root; no placeholder substitution>"
 - test_framework: "<e.g. pytest, xunit, junit5, vitest, playwright, go test>"
 - test_file_pattern: "<regex>"
 - permissions_requested: ["Bash(poetry:*)", "Bash(pytest:*)", ...]
@@ -156,7 +156,7 @@ This is the full schema written to `.claude/context/language-config.md`. Every f
 ```
 
 **Notes:**
-- `format_command` must include `{FILE}` and `{PROJECT_ROOT}` placeholders — the auto-format hook substitutes them at runtime.
+- `format_command` is a self-contained shell command — no placeholder substitution. See the *Commands* note above for the rationale.
 - `coverage_format: none` disables coverage enforcement entirely for that repo.
 - `zero_warning_support: none` means the user has accepted that no tool-enforced strictness exists; the Reviewer compensates manually.
 - `permissions_requested` records what was needed. What was actually granted lives in `settings.json:permissions.allow` — see [`permissions.md`](permissions.md).

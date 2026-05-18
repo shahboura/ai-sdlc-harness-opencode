@@ -25,6 +25,7 @@ Honour `--keep-legacy` when invoked with that flag:
 
 - Skip [language discovery](language-discovery.md) Phase 3 negotiation entirely.
 - Copy command strings forward from the old file (`build_command`, `test_command`, `coverage_command`, `format_command`, `restore_command`).
+  - **`format_command` placeholder strip**: if the legacy value contains `{FILE}` or `{PROJECT_ROOT}`, strip the placeholders and replace with a self-contained equivalent (e.g. `poetry run ruff format {FILE}` → `poetry run ruff format .`). Earlier schema versions documented these placeholders for a never-implemented auto-format hook; carrying them forward leaves the format step broken because nothing substitutes them. Surface the change to the human: *"Your legacy `format_command` for `<repo>` contained `{FILE}` / `{PROJECT_ROOT}` placeholders. The auto-format hook those targeted was never implemented, so I'm rewriting the command to `<new value>`. Confirm or override."*
 - Synthesise only the new fields the legacy schema lacked:
   - `build_error_pattern`, `build_warning_pattern`, `build_success_pattern`
   - `test_summary_pattern`

@@ -1,6 +1,6 @@
 # AI-Driven Development Workflow
 
-This project is a Claude Code harness that orchestrates multi-agent development workflows for User Stories / Issues across multiple repos. Supports multiple work item providers (Azure DevOps, Jira, GitLab, GitHub) and git providers (Azure DevOps, GitLab, GitHub) via a provider adapter layer. No application code lives here — only agents, skills, hooks, and context.
+This project is a Claude Code harness that orchestrates multi-agent development workflows for User Stories / Issues across multiple repos. Supports multiple work item providers (Azure DevOps, Jira, GitLab, GitHub, Zoho, local Markdown) and git providers (Azure DevOps, GitLab, GitHub, gh-cli, glab-cli) via a provider adapter layer. No application code lives here — only agents, skills, hooks, and context.
 
 ## Quick Start
 
@@ -12,19 +12,34 @@ Defaults from `provider-config.md`. See the `/dev-workflow` skill for full workf
 
 ## Workflow Phases
 
-1. **Requirements Ingestion** — Planner pulls story/issue from configured provider, asks clarifying questions
+1. **Requirements Ingestion** — Planner pulls story/issue from configured provider, asks clarifying questions. *No feature branch exists yet.*
 2. **Planning & Approval** — Planner proposes approaches, human selects one, plan + test outline + tracker generated — **GATE #1**
+   - *Pre-flight runs immediately after GATE #1 clears* (`commands/preflight.md`): the orchestrator reads the tracker's `## Repo Status` section (populated by the Planner per `plan-generator/SKILL.md` Step 7), creates the `<team>/feature/<id>-<slug>` branch in **exactly** the repos the plan named (never in every known repo as a "safe default" — the prior behaviour produced orphan branches in unaffected repos), and commits the plan onto the new feature branch in the single-repo workspace-is-git-repo case. Pre-flight has no human gate.
 3. **TDD Development Loop** — For each task: Tester writes failing tests → Developer makes them pass → Reviewer reviews combined diff → squash-merge
 4. **Human Approval** — Human reviews full implementation — **GATE #2**
 5. **Test Hardening** — Tester fills integration/E2E gaps, enforces ≥ 90% coverage, Reviewer reviews
+   - *Static security review (P5.5) runs after Phase 5 completes* (`commands/security-review.md`): the orchestrator dispatches per-repo SAST lanes per `language-config.md`, aggregates findings, and stamps `Security review completed <ts>`. When any finding ≥ medium severity surfaces, **GATE #2.5** fires and the human picks `waive` / `fix-now` / `defer`. See `dev-workflow/SKILL.md` Commands table for invocation rules.
 6. **PR Creation** — Reviewer does holistic pre-PR review of entire feature branch (all tasks combined, impl + tests, against plan + conventions) → detailed report shown to human → human approves — **GATE #3**
 7. **PR Review Response** *(on-demand, after Phase 6)* — Reviewer challenges each PR comment against plan + acceptance criteria, classifies as VALID/INVALID/PARTIAL → findings report shown to human → human selects which comments to address — **GATE #4** → Planner adds new tasks → re-enters Phase 3 loop for those tasks. Repeatable across multiple review rounds.
+
+**Inter-gate: Ad-Hoc Request Handling** *(on-demand, between any pair of gates)* — Human submits a change request at GATE #2 (instead of `APPROVED`), at GATE #3, or mid-phase via `/dev-workflow request <story-id> "<text>"`. Reviewer triages each request against the approved plan, classifies as IN_SCOPE_BUG / IN_SCOPE_AC_MISS / OUT_OF_SCOPE / PLAN_CONFLICT / DUPLICATE / INVALID → findings shown to human → human confirms in-scope items or chooses expand-scope / defer / withdraw for out-of-scope — **GATE #5** → Planner appends rows under `## Ad-hoc Tasks (Batch <N>)` → re-enters Phase 3 loop for those tasks. Repeatable across multiple batches. See `skills/dev-workflow/commands/handle-request.md`.
+
+### Cross-cutting & utility commands
+
+These run outside the linear 1→7 pipeline. Full invocation contracts live in [`skills/dev-workflow/SKILL.md`](skills/dev-workflow/SKILL.md) (Commands table).
+
+- **P8 `reconcile`** — post-merge cleanup: marks the Story-State `Archived`, renames `tracker.md → tracker.archived.md`, stamps `Merge detected` and `Workflow completed`.
+- **P9 `metrics`** — aggregates `Plan approved` / `PR created` / per-task durations into `metrics-report.md` + appends to `ai/_metrics-log.csv`. Auto-triggered at T1 (post-PR), T2 (each review cycle), T3 (post-reconcile); also runnable ad-hoc.
+- **R `resume`** — workflow-state recovery after a crash; reads `Recovery-State:` and re-enters the interrupted phase. Pair: `/dev-workflow abort <id>` renames `tracker.md → tracker.aborted.md`.
+- **`hotfix`** — re-entry on an `Archived` story; operates on a **clone** so the original `Archived` row is preserved.
+- **`migrate`** — one-time `ai/plans/` + `ai/tasks/` → `ai/<YYYY-MM-DD>-<work-item-id>/` layout migration. Run once per workspace; the v2.0 startup gate refuses other commands when the legacy layout is detected.
+- **`request`** — see Inter-Gate Ad-Hoc Request Handling above.
 
 ## Critical Ownership Rules
 
 - The **Orchestrator** is the sole owner of the task tracker. It updates status after every agent verdict. The tracker stays **uncommitted** until Phase 6.
 - The **Tester** (Phase 3) commits failing tests only — commit format `#<STORY-ID> #<TASK-ID> test: <slug>`. Never writes production code.
-- The **Developer** commits production code only (no tracker, no test modifications). Self-manages worktrees in the target repo via `git -C <repo-path>`.
+- The **Developer** commits production code only (no tracker, no test modifications). Works inside the orchestrator-created worktree (the orchestrator owns `git worktree add` in `commands/develop.md` Step 1 sub-step 5), or directly on the feature branch in the fallback path described in *Worktree Fallback* below.
 - The **Reviewer** is strictly read-only — NEVER writes or edits any file. Returns its report to the orchestrator.
 
 ## Phase 3 Execution Order (NON-NEGOTIABLE)
@@ -78,9 +93,9 @@ Any other transition is blocked by the `tracker-transition-guard` hook.
 
 - Show a brief plan before taking action on any task. Wait for approval before executing.
 - All commits: `#<STORY-ID> #<TASK-ID>: description` (both IDs mandatory; Task ID from planner e.g. T1, T2). TDD commits use `test:` or `impl:` suffix — `#<STORY> #T<n> test: <slug>` and `#<STORY> #T<n> impl: <slug>`. Every commit body must include `Co-Authored-By: Claude Code <noreply@anthropic.com>`.
-- All branches: `<team>/<type>/<id>-<slug>`
+- All branches: `<team>/feature/<id>-<slug>` — the middle segment is the literal string `feature`
 - Build must pass the project's strictness policy as recorded in `language-config.md`. The harness warns at init-workspace time if no zero-warning enforcement mechanism is available for the detected language.
-- Tests must achieve ≥ 90% line coverage on new/modified code only (test command per language-config.md). Do NOT go out of scope to cover pre-existing code.
+- Tests must achieve ≥ 90% line coverage on new/modified code only (test command per language-config.md). Do NOT go out of scope to cover pre-existing code. **Note**: `coverage-report` reports whole-file/package coverage — diff-aware filtering is not implemented. The Tester/Reviewer must inspect the per-file breakdown for files this story modified (via `git diff --name-only`) and confirm the threshold is met against those files, not the repo aggregate. See `coverage-report/SKILL.md` → *Scope — important*.
 - Task tracker must be updated (in working tree) after every status change — committed once in Phase 6, amended in Phase 7
 - Reviewer NEVER writes or edits files — orchestrator owns all tracker updates
 - No code before plan approval. No PR before human approval.
@@ -111,7 +126,14 @@ Provider selection happens during `/init-workspace` and is stored in `.claude/co
 
 ## Worktree Fallback (Windows)
 
-Git worktree creation may fail with `error: could not lock config file .git/config: File exists`. If this happens, the Developer reports `Worktree: failed` in its status, and the orchestrator re-invokes without worktree isolation.
+Git worktree creation may fail with `error: could not lock config file .git/config: File exists`. The orchestrator owns worktree creation in `commands/develop.md` Step 1 sub-step 5 — the Developer / Tester never see the failure. The flow is:
+
+1. Orchestrator attempts `git worktree add <path> -b <branch> <feature-branch>`.
+2. On failure, the orchestrator retries once (the lock error is usually transient).
+3. On second failure, the orchestrator sets `worktree_failed: true` in the agent prompt's REPO_CTX block and the agent works directly on the feature branch.
+4. The Phase 3 squash-merge (`commands/develop.md` Step 4 APPROVED) detects fallback mode and uses `git reset --soft <feature_head>` to collapse the agent commits, rather than `git merge --squash <worktree-branch>` (which would fail because no worktree branch exists). See the v2.0 CHANGELOG for the squash-merge fallback detail.
+
+The agent never reports `Worktree: failed` — it reports `Worktree: not used (direct branch)` and `Worktree branch: n/a` per the schema in `agents/shared/status-schema.md`.
 
 ## Technology Stack
 

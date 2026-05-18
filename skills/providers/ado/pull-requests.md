@@ -1,5 +1,11 @@
 # ADO Pull Request Adapter
 
+> Authoritative reference: [pr-conventions](../shared/pr-conventions.md) — cross-provider PR title / link-work-item conventions live there; this adapter only declares ADO-specific tool mappings.
+
+<!-- Updated by: dev-workflow-plan.md [M-09] [IMPL-09-02]
+     Reason: Add missing citation to shared pr-conventions per CC-04.3 / CC-04.5.
+     CC conventions applied: CC-04.3. -->
+
 Provider adapter for Azure DevOps Pull Requests. Used when `provider-config.md` specifies
 `Git Provider: ado`.
 

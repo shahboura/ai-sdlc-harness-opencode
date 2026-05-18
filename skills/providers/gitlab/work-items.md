@@ -144,7 +144,7 @@ See `skills/providers/shared/capabilities.md` for the canonical list and declara
 | `work_item.list_changelog` | 🟡 | Issue resource events API — not exposed via current MCP toolset; fetch via REST `/projects/<id>/issues/<iid>/resource_state_events` |
 | `work_item.list_children` | 🟡 | Parse `mcp__gitlab__list_issue_links` for `relates_to` style links; native parent/child only via epic-issue links (group-scoped) |
 | `work_item.list_attachments` | 🟡 | Attachments are inline markdown image/file links in `description` — parse the body |
-| `work_item.transition_state` | ✅ | `mcp__gitlab__update_issue` with `state_event: close` (or `reopen`) |
+| `work_item.transition` | ✅ | `mcp__gitlab__update_issue` with `state_event: close` (or `reopen`) |
 | `work_item.search` | ✅ | `mcp__gitlab__list_issues` accepts free-text search via `search` parameter |
 
 ## Planner Tool List (for agent frontmatter)

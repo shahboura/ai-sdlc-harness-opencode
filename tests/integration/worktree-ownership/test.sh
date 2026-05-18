@@ -47,7 +47,11 @@ FEATURE_BRANCH="team/feat/test-feature"
 UID8=$(uuidgen 2>/dev/null | tr '[:upper:]' '[:lower:]' | cut -c1-8 \
        || python3 -c "import uuid; print(str(uuid.uuid4())[:8])")
 WORKTREE_BRANCH="worktree/test-001-t1-${UID8}"
-WORKTREE_PATH="$REPO_PATH/../worktrees/repo-t1"
+# B1 — path carries the same UID8 as the branch. Without it, a resume after a
+# crash that left `repo-t1/` on disk would collide with the next `git worktree
+# add` attempt (the dir already exists). The UID8 makes a fresh attempt always
+# succeed; the orphan is cleaned via the reconciliation flow.
+WORKTREE_PATH="$REPO_PATH/../worktrees/repo-t1-${UID8}"
 
 if git -C "$REPO_PATH" worktree add "$WORKTREE_PATH" -b "$WORKTREE_BRANCH" "$FEATURE_BRANCH" >/dev/null 2>&1; then
     _pass 'orchestrator-side worktree creation succeeds'
@@ -79,6 +83,43 @@ if printf '%s' "$WORKTREE_BRANCH" | grep -qE '^worktree/[^/]+-t[0-9]+-[0-9a-f]{8
     _pass 'branch name matches the orchestrator UID8 pattern'
 else
     _fail 'branch pattern' "branch name '$WORKTREE_BRANCH' doesn't match worktree/<story>-t<n>-<UID8>"
+fi
+
+# B1 — path also carries the UID8 (regression catch — if a future edit drops
+# the UID8 from the path, a crashed-mid-task resume would collide).
+if printf '%s' "$(basename "$WORKTREE_PATH")" | grep -qE '^[^/]+-t[0-9]+-[0-9a-f]{8}$'; then
+    _pass 'worktree path basename includes the UID8 suffix'
+else
+    _fail 'path pattern' "path basename '$(basename "$WORKTREE_PATH")' doesn't match <repo>-t<n>-<UID8>"
+fi
+
+# B1 — collision regression: a SECOND `git worktree add` at the same path
+# (simulating a resumed lane that re-runs Step 1 sub-step 5 with a fresh UID8
+# but accidentally re-uses the old path) must fail. The fresh path is the only
+# way the orchestrator can survive an orphan worktree on disk.
+COLLISION_BRANCH="worktree/test-001-t1-deadbeef"
+if git -C "$REPO_PATH" worktree add "$WORKTREE_PATH" -b "$COLLISION_BRANCH" "$FEATURE_BRANCH" >/dev/null 2>&1; then
+    _fail 'reusing the same path on a fresh add fails' \
+        "git worktree add succeeded against an already-occupied path '$WORKTREE_PATH' — git's natural collision guard is broken"
+    # Clean up so the cleanup at end of test doesn't double-fault.
+    git -C "$REPO_PATH" worktree remove "$WORKTREE_PATH" --force >/dev/null 2>&1 || true
+    git -C "$REPO_PATH" branch -D "$COLLISION_BRANCH" >/dev/null 2>&1 || true
+else
+    _pass 'reusing the same path on a fresh add fails (UID8-in-path prevents this)'
+fi
+
+# B1 — fresh path with a different UID8 must succeed even while the original
+# worktree still exists. This is the post-crash resume happy path.
+ALT_UID8="cafef00d"
+ALT_BRANCH="worktree/test-001-t1-${ALT_UID8}"
+ALT_PATH="$REPO_PATH/../worktrees/repo-t1-${ALT_UID8}"
+if git -C "$REPO_PATH" worktree add "$ALT_PATH" -b "$ALT_BRANCH" "$FEATURE_BRANCH" >/dev/null 2>&1; then
+    _pass 'fresh UID8 path succeeds even with the original worktree still on disk'
+    git -C "$REPO_PATH" worktree remove "$ALT_PATH" --force >/dev/null 2>&1 || true
+    git -C "$REPO_PATH" branch -D "$ALT_BRANCH" >/dev/null 2>&1 || true
+else
+    _fail 'fresh UID8 path resumes cleanly' \
+        "git worktree add to '$ALT_PATH' failed while the original was still on disk — the UID8-in-path fix does not give the expected post-crash resume property"
 fi
 
 # ----------------------------------------------------------------------

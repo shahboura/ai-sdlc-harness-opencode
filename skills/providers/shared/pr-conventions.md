@@ -1,5 +1,8 @@
 # Shared PR/MR Conventions
 
+> Owner: P6
+> Version: 1.0
+
 Common patterns shared across all PR/MR provider adapters.
 Each adapter references this file instead of repeating these sections.
 

@@ -1,10 +1,19 @@
 # Universal Engineering Principles
 
+> Owner: cross-cutting
+> Version: 1.0
+
+<!-- Updated by: dev-workflow-plan.md [M-01] [IMPL-01-12] (sub-step c)
+     Reason: Add owner + version headers per CC-04.4 / CC-04.6 — file pre-existed; content unchanged.
+     CC conventions applied: CC-04.4, CC-04.6 -->
+
 <!--
 Reference document, not an invocable agent. The Developer and Reviewer agents
-`Read` this as a regular file (see `agents/developer/index.md:118` and
-`agents/reviewer/index.md:178`). Agent-style frontmatter was removed because
-it misleadingly suggested this could be `@`-invoked.
+`Read` this as a regular file (see the Startup Protocol section in
+`agents/developer/index.md` and `agents/reviewer/index.md`). Agent-style
+frontmatter was removed because it misleadingly suggested this could be
+`@`-invoked. Line numbers are deliberately omitted — they rot every time the
+referenced file is edited.
 -->
 
 

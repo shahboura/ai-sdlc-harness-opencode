@@ -152,13 +152,14 @@ gently suggest splitting:
 After the user approves the final version, ask:
 > "Ready to post this as a comment on work item #[ID]?"
 
-If confirmed, use `the **add comment** tool from the active provider adapter` to add the improved story
-as a single comment on the work item. Format as clean HTML for ADO's comment renderer.
+If confirmed:
 
-**Provider-specific formatting notes:**
-- **ADO**: Format as HTML for ADO's comment renderer.
-- **Jira**: Format as markdown or ADF depending on MCP server support.
-- **GitLab / GitHub**: Format as markdown (native support).
+- **For ADO / Jira / GitLab / GitHub / Zoho** (every provider that declares `work_item.add_comment`): use the **add comment** tool from the active provider adapter to add the improved story as a single comment on the work item. Format appropriately:
+  - **ADO**: Format as HTML for ADO's comment renderer.
+  - **Jira**: Format as markdown or ADF depending on MCP server support.
+  - **GitLab / GitHub**: Format as markdown (native support).
+  - **Zoho**: Format per the Zoho adapter's comment instructions.
+- **For `local-markdown`** (the adapter has no `work_item.add_comment` capability — there is no remote system to post to): follow the **Post Back / Save Refined Story** section of `skills/providers/local-markdown/work-items.md` instead. The adapter prompts the user to overwrite the source `.md` file with the refined content via the `Write` tool. If the user declines, the refined story stays in the conversation for manual copy.
 
 The comment contains:
 1. The "What was improved" summary (if present).

@@ -20,9 +20,16 @@ Fixes vs. the previous shell implementation:
 """
 from __future__ import annotations
 
+# Changed by: dev-workflow-plan.md [M-01] [IMPL-01-08 / IMPL-01-09]
+# Reason: Delegate subagent-type detection and AGENT-STATUS block / field parsing to
+# shared helpers (`_subagent_utils`, `_block_parsing`) per TEST-15 / TEST-16 / CC-04.3 / CC-08.1.
+# CC conventions applied: CC-04.3 (Python `from` import), CC-08.1 (DRY extraction).
 import json
 import os
 import re
+
+from _block_parsing import extract_field_from_block, extract_status_block
+from _subagent_utils import normalize_agent_type
 import sys
 from typing import Any
 
@@ -57,25 +64,15 @@ def _workspace_root_from_cwd() -> str | None:
 
 
 def _extract_status_block(text: str) -> str | None:
-    """Find `AGENT STATUS` and return the block extending to the next H1/H2
-    heading or EOF. The previous implementation stopped at `\\n\\n` and lost
-    multi-paragraph fields.
-    """
-    m = re.search(r"(?:📋\s*)?AGENT STATUS\b[^\n]*\n", text)
-    if not m:
-        return None
-    start = m.start()
-    rest = text[m.end():]
-    end_m = re.search(r"\n#{1,2}\s", rest)
-    if end_m:
-        return text[start : m.end() + end_m.start()]
-    return text[start:]
+    """Delegate to `_block_parsing.extract_status_block` per CC-04.3 / CC-08.1
+    (M-01 IMPL-01-09)."""
+    return extract_status_block(text)
 
 
 def _find_field(block: str, name: str) -> str:
-    pat = re.compile(rf"^\s*{re.escape(name)}\s*:\s*(.+?)\s*$", re.MULTILINE)
-    m = pat.search(block)
-    return m.group(1) if m else ""
+    """Delegate to `_block_parsing.extract_field_from_block` per CC-04.3 /
+    CC-08.1 (M-01 IMPL-01-09)."""
+    return extract_field_from_block(block, name)
 
 
 def _find_task_id(block: str, prompt: str) -> str:
@@ -90,11 +87,12 @@ def _find_task_id(block: str, prompt: str) -> str:
 
 
 def _normalise_agent(name: str) -> str:
-    n = (name or "").strip().lower()
-    for sep in (":", "/"):
-        if sep in n:
-            n = n.rsplit(sep, 1)[-1]
-    return n
+    """Delegate to `_subagent_utils.normalize_agent_type` for namespaced-id
+    normalisation (M-01 IMPL-01-08).
+    """
+    if not name:
+        return ""
+    return normalize_agent_type({"agent_type": name}) or ""
 
 
 def _determine_agent(subagent_type: str, response: str) -> str:
@@ -136,23 +134,70 @@ def _parse_task_status(content: str, task_id: str) -> str | None:
     return None
 
 
+_PER_WORKFLOW_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-[\w.-]+$")
+
+
+def _candidate_trackers(workspace_root: str | None) -> list[str]:
+    """Collect every readable tracker.md path under both layouts.
+
+    Canonical (M-14, per workflow-paths.md):
+        <workspace>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md
+        <workspace>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.archived.md
+        <workspace>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.aborted.md
+
+    Legacy (read-side compat during the migration window):
+        <workspace>/ai/tasks/*.md
+    """
+    ai_root = os.path.join(workspace_root or "", "ai") if workspace_root else "ai"
+    if not os.path.isdir(ai_root):
+        return []
+    paths: list[str] = []
+    # Canonical layout: per-workflow directories under ai/.
+    try:
+        entries = os.listdir(ai_root)
+    except OSError:
+        entries = []
+    for name in entries:
+        sub = os.path.join(ai_root, name)
+        if not os.path.isdir(sub):
+            continue
+        if not _PER_WORKFLOW_DIR_RE.match(name):
+            continue
+        for fname in ("tracker.md", "tracker.archived.md", "tracker.aborted.md"):
+            cand = os.path.join(sub, fname)
+            if os.path.isfile(cand):
+                paths.append(cand)
+    # Legacy layout: flat ai/tasks/*.md.
+    legacy = os.path.join(ai_root, "tasks")
+    if os.path.isdir(legacy):
+        try:
+            for f in os.listdir(legacy):
+                if f.endswith(".md"):
+                    paths.append(os.path.join(legacy, f))
+        except OSError:
+            pass
+    return paths
+
+
 def _find_tracker(workspace_root: str | None, story_hint: str) -> str | None:
-    base = os.path.join(workspace_root or "", "ai", "tasks") if workspace_root else "ai/tasks"
-    if not os.path.isdir(base):
+    candidates = _candidate_trackers(workspace_root)
+    if not candidates:
         return None
-    md_files = [f for f in os.listdir(base) if f.endswith(".md")]
-    if not md_files:
-        return None
-    # Prefer filename match
     if story_hint:
-        for f in sorted(md_files, reverse=True):
-            if story_hint in f:
-                return os.path.join(base, f)
-    # Fallback: most recent mtime
-    md_files.sort(
-        key=lambda f: os.path.getmtime(os.path.join(base, f)), reverse=True
-    )
-    return os.path.join(base, md_files[0])
+        # Prefer paths whose containing directory OR filename mentions the
+        # story hint. Canonical layout encodes the ID in the directory name;
+        # legacy layout encodes it in the filename.
+        matches = [
+            p for p in candidates
+            if story_hint in os.path.basename(os.path.dirname(p))
+            or story_hint in os.path.basename(p)
+        ]
+        if matches:
+            matches.sort(key=os.path.getmtime, reverse=True)
+            return matches[0]
+    # Fallback: most recent mtime.
+    candidates.sort(key=os.path.getmtime, reverse=True)
+    return candidates[0]
 
 
 def _expected_status(agent: str, outcome: str, verdict: str) -> str | None:

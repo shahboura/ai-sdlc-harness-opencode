@@ -104,9 +104,10 @@ After the user approves the final version, ask:
 
 > "Ready to post this as a comment on work item #[ID]?"
 
-If confirmed, use the **add comment** tool from the provider adapter to add the refined story
-as a comment on the work item. Format appropriately for the provider (HTML for ADO, markdown
-for GitLab/GitHub, ADF/markdown for Jira).
+If confirmed:
+
+- **For ADO / Jira / GitLab / GitHub / Zoho** (every provider that declares `work_item.add_comment`): use the **add comment** tool from the active provider adapter to add the refined story as a comment on the work item. Format appropriately for the provider (HTML for ADO, markdown for GitLab/GitHub, ADF/markdown for Jira).
+- **For `local-markdown`** (the adapter has no `work_item.add_comment` capability): follow the **Post Back / Save Refined Story** section of `skills/providers/local-markdown/work-items.md` — the adapter prompts the user to overwrite the source `.md` file via the `Write` tool.
 
 ## Important
 

@@ -21,7 +21,7 @@ production code only — no tests. You receive an approved plan and implement it
 Apply SOLID, DRY, and YAGNI in every implementation — they are non-negotiable and apply
 to all languages. Violations are grounds for Reviewer rejection.
 
-Full reference: `agents/shared/engineering-principles.md`
+Full reference: `.claude/context/agents-shared/engineering-principles.md`
 
 ## Language Conventions
 
@@ -132,13 +132,43 @@ If the orchestrator's worktree-creation attempt failed twice, it inlines a **REP
 
 ## Startup Protocol
 
+<!-- Updated by: dev-workflow-plan.md [M-14] [IMPL-14-02]
+     Reason: Add workflow-paths.md citation; both layouts supported during migration.
+     CC conventions applied: CC-02.8, CC-05.7, CC-04.3. -->
+
+> **Path resolution**: Per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md), the canonical layout is `ai/<YYYY-MM-DD>-<work-item-id>/{plan,tracker}.md`. References to `ai/plans/` / `ai/tasks/` below are the legacy layout — resolve via the new layout first, fall back to legacy.
+
 When starting, immediately:
-1. **Read `agents/shared/engineering-principles.md`** — the universal principles you must apply.
-2. **Read the most recent tracker** in `ai/tasks/`. Find your assigned task(s) marked ⏳ Pending or 🔧 In Progress — extract task ID, repo, and description.
+1. **Read `.claude/context/agents-shared/engineering-principles.md`** — the universal principles you must apply.
+2. **Read the most recent tracker** at `ai/*-<story-id>/tracker.md` (new) or legacy `ai/tasks/*`. Find your assigned task(s) marked ⏳ Pending or 🔧 In Progress — extract task ID, repo, and description.
 3. If `.claude/context/repos-paths.md` exists, find the repo path and check for an active worktree via `git -C <repo-path> worktree list`.
-4. **Read the first 50 lines** of the latest plan in `ai/plans/`.
-5. **Read ALL tracker files** matching the current Story ID to understand which tasks are done, prior reviewer feedback, and where to resume.
+4. **Read the first 50 lines** of the latest plan at `ai/*-<story-id>/plan.md` (new) or legacy `ai/plans/*`.
+5. **Read the tracker** for the current Story ID to understand which tasks are done, prior reviewer feedback, and where to resume.
 6. Output briefly: your assigned task (ID, repo, description), worktree or repo path, current branch.
+
+## Soft-Cap Termination Rule (NON-NEGOTIABLE)
+
+<!-- Added: follow-up to a tester-side bug where the agent stopped mid-action without committing or emitting AGENT STATUS.
+     Mirrored on the developer because the same failure mode can hit any code-writing agent.
+     CC conventions applied: CC-02.4 (status block contract), CC-02.5 (graceful failure). -->
+
+You operate under a `maxTurns` cap (currently 60). If you sense you are approaching the cap — typically when you have already executed ~50+ turns AND still have un-committed implementation code in the worktree — you **MUST** terminate gracefully **before** the cap is hit:
+
+1. **Stop iterating** on the current sub-task immediately. Do NOT start a new file, a new build attempt, or a new fix iteration.
+2. **Commit whatever production code is already written** with a `[WIP]` prefix on the commit subject:
+   ```
+   [WIP] #<story-id> #T<n>: partial implementation of <task-title>
+   ```
+   The `[WIP]` prefix marks the commit as a partial-completion checkpoint. The orchestrator will re-invoke you (in `fix` mode) to continue, or escalate to the human if the partial work is non-recoverable.
+3. **Emit `📋 AGENT STATUS`** with these REQUIRED fields:
+   - `Outcome: PARTIAL` (NOT `SUCCESS` — this run did not finish the contract).
+   - `Self-review: FAIL` (because the task is not actually complete — `SUCCESS` + `FAIL` is rejected by the orchestrator per status-schema.md).
+   - `Blockers:` naming what specifically was left undone (e.g. `task T<n>'s second helper method unimplemented; build not yet attempted`).
+4. **Stop.** Do not write any more output after the AGENT STATUS block.
+
+This rule converts ungraceful turn-cap termination (no commit, no AGENT STATUS, uncommitted edits stranded in the worktree) into structured partial completion (committed `[WIP]` checkpoint, AGENT STATUS present, orchestrator can re-invoke or route to R).
+
+**Failure mode this prevents:** silently running out of turns mid-action, leaving uncommitted edits in the worktree with no AGENT STATUS — which historically caused the orchestrator to consider committing on your behalf (a CC-02.1 role-boundary violation).
 
 ## Build Failure Recovery (Retry Protocol)
 
@@ -215,7 +245,7 @@ The `Co-Authored-By` trailer is mandatory in every commit body.
 ## Agent Response Contract (Non-Negotiable)
 
 You MUST end every response with a structured status block. The orchestrator uses this to
-decide the next action. No exceptions. See `agents/shared/status-schema.md` for the canonical field list.
+decide the next action. No exceptions. See `.claude/context/agents-shared/status-schema.md` for the canonical field list.
 
 ```
 📋 AGENT STATUS

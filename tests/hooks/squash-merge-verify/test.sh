@@ -145,6 +145,73 @@ test_warning_no_staged_changes_with_branch() {
     fi
 }
 
+# ── Already-merged FF: squash is a no-op, hook reports success ─────────────
+
+test_already_merged_branch_is_noop_success() {
+    # When the merged branch's tip is already in HEAD's history (the changes
+    # landed via an earlier merge / cherry-pick / rebase), `git merge --squash`
+    # legitimately stages nothing. The hook must NOT warn in that case.
+    local repo
+    repo="$(mktemp -d -t merge-verify-ff.XXXXXX)"
+    trap "rm -rf '$repo'" RETURN
+    (
+        cd "$repo"
+        git init -q -b main >/dev/null
+        git config user.email tester@example.com
+        git config user.name Tester
+        printf 'hello\n' > a.txt
+        git add a.txt
+        git commit -q -m '#x #T0: initial'
+        # `work` branches off main with no changes — its tip == main's tip.
+        # By construction `work` is an ancestor of HEAD (HEAD == work's tip).
+        git checkout -q -b work
+        git checkout -q main
+    )
+    local payload
+    payload="$(mk_bash_payload "git -C $repo merge --squash work")"
+    local result rc
+    result="$(printf '%s' "$payload" | (cd "$FAKE_WORKSPACE" && "$HOOK") 2>&1)"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        _fail "expected exit 0 (no-op success) for already-merged FF, got rc=$rc; output: $result"
+        return 1
+    fi
+    if ! printf '%s' "$result" | grep -qF 'already-merged fast-forward'; then
+        _fail "expected 'already-merged fast-forward' message, got: $result"
+        return 1
+    fi
+    if printf '%s' "$result" | grep -qF 'no staged changes'; then
+        _fail "FF case should NOT trigger the 'no staged changes' warning; output: $result"
+        return 1
+    fi
+}
+
+# ── Unexpanded shell variable in -C: silent degrade, no false-positive ─────
+
+test_unexpanded_shell_var_in_dash_C_does_not_false_warn() {
+    # Failure mode: the orchestrator emits a chained command like
+    #   REPO_PATH="..." && git -C "$REPO_PATH" merge --squash X \
+    #     && git -C "$REPO_PATH" commit -m "..."
+    # REPO_PATH is a shell-local assignment, not exported, so it never
+    # reaches the hook's environment. shlex returns the literal `$REPO_PATH`
+    # token, every git subprocess fails with FileNotFoundError, and the hook
+    # previously fell through to the "no staged changes" warning. Confirm the
+    # unresolvable-cwd guard degrades silently instead.
+    local payload
+    payload="$(mk_bash_payload 'REPO_PATH="/tmp/does-not-exist" && git -C "$REPO_PATH" merge --squash worktree/sample-branch && git -C "$REPO_PATH" commit -m "msg"')"
+    local result rc
+    result="$(printf '%s' "$payload" | (cd "$FAKE_WORKSPACE" && "$HOOK") 2>&1)"
+    rc=$?
+    if [ "$rc" != "0" ]; then
+        _fail "expected exit 0 (silent degrade) for unresolvable cwd, got rc=$rc; output: $result"
+        return 1
+    fi
+    if printf '%s' "$result" | grep -qF 'no staged changes'; then
+        _fail "must NOT emit 'no staged changes' false-positive for unresolvable cwd; output: $result"
+        return 1
+    fi
+}
+
 # ── git -C path that doesn't exist: graceful degradation ────────────────────
 
 test_no_crash_on_nonexistent_repo_path() {

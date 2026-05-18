@@ -8,7 +8,7 @@ description: >
   plus GitHub CLI (gh-cli) and GitLab CLI (glab-cli) as no-MCP git providers. Run once
   before using /dev-workflow or /story-workflow.
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, Agent
-argument-hint: "[--full | --refresh-conventions | --refresh-permissions | --keep-legacy]"
+argument-hint: "[--full | --refresh-conventions | --refresh-permissions | --refresh-shared | --keep-legacy]"
 ---
 
 # /init-workspace — Workspace Setup
@@ -24,6 +24,7 @@ One-time workspace setup, or new-developer onboarding. Generates the context fil
 /init-workspace --full                  # Force full regeneration
 /init-workspace --refresh-conventions   # Only regenerate conventions.md
 /init-workspace --refresh-permissions   # Only re-propose Bash permissions (Step 3c)
+/init-workspace --refresh-shared        # Only re-mirror plugin agents/shared/ files (Step 6c)
 /init-workspace --keep-legacy           # In-place schema upgrade without re-running discovery
 ```
 
@@ -38,8 +39,67 @@ All generated files live at `.claude/context/`:
 | `repos-paths.md` | Maps repo names to local filesystem paths |
 | `language-config.md` | Discovered per-repo language, toolchain, commands, regex patterns, permissions |
 | `conventions.md` | Team coding patterns, language baselines, repo-specific patterns |
+| `state.md` | Workspace lifecycle state (Bootstrap completed, Workflow active, Last metric stamp) — owner: P0 |
 
 All files are local and git-ignored. Each developer generates their own set by running `/init-workspace`.
+
+<!-- Changed by: dev-workflow-plan.md [M-02] [IMPL-02-01]
+     Reason: Add state.md to the output file inventory per CC-01.4 / CC-04.4 / GAP-12.
+     CC conventions applied: CC-01.4, CC-04.4. -->
+
+### `naming-config.md` schema (CC-01.8 — IMPL-15-01)
+
+<!-- Changed by: dev-workflow-plan.md [M-15] [IMPL-15-01]
+     Reason: Define the canonical naming-config schema per CC-01.8 — branch / commit / PR / tag templates sourced from context, never hardcoded.
+     CC conventions applied: CC-01.8, CC-04.4 (owner = P0). -->
+
+`.claude/context/naming-config.md` is the team's chosen naming templates. Per CC-01.8 every consumer (P2.5 preflight, P3 develop, P6 create-pr, P8 reconcile) reads these — never hardcodes them.
+
+The schema uses the placeholder DSL declared in [`naming-templates`](../dev-workflow/context/naming-templates.md). The four required keys:
+
+| Key | Default template | Purpose |
+|---|---|---|
+| `branch_format:` | `${type}/${story_id}-${slug}` | Feature branch name |
+| `commit_format:` | `#${story_id} #${task_id} ${type}: ${slug}` | Commit subject |
+| `pr_title_format:` | `[${repo}] ${slug}` | PR / MR title |
+| `tag_format:` | `v${story_id}` | Release tag *(rarely used)* |
+
+The bootstrap proposes these defaults from [`naming-defaults`](naming-defaults.md) and the user accepts or customises (S5b + S5c below). The chosen values are written to `naming-config.md` and the validators (`_validate_commit_msg.py`, P2.5 branch lint, P6 PR-title check) read from there at runtime.
+
+Example:
+
+```markdown
+# Naming Configuration
+
+branch_format: feature/${story_id}-${slug}
+commit_format: #${story_id} #${task_id} ${type}: ${slug}
+pr_title_format: [${repo}] ${slug}
+tag_format: v${story_id}
+```
+
+> Authoritative reference: [naming-templates](../dev-workflow/context/naming-templates.md) — declares the placeholder vocabulary and render contract. Inline reproduction of these formats outside this file is a CC-01.8 violation.
+
+### `state.md` schema (CC-01.4 — IMPL-02-01)
+
+`state.md` is the workspace-level lifecycle file. The orchestrator reads it at startup (per CC-05.4) and refuses to enter P1 (`/dev-workflow requirements`) until `Bootstrap completed <ts>` is present. Schema:
+
+| Field | Format | Set by | Purpose |
+|---|---|---|---|
+| `Bootstrap completed:` | `YYYY-MM-DD HH:MM UTC` | `init-workspace` Step 7b | One-shot marker — present after the first successful `init-workspace` run. |
+| `Workflow active:` | `<workflow-dir>` or `none` | `dev-workflow` commands on phase entry | The active per-workflow directory under `ai/<YYYY-MM-DD>-<id>/` (per CC-05.7), or `none` between workflows. |
+| `Last metric stamp:` | `<metric label> <YYYY-MM-DD HH:MM UTC>` | every metric emitter | Mirrors the last line appended to the active tracker's Metrics block — for fast staleness detection without reading the tracker. |
+
+Owner: P0 (`init-workspace`) writes `Bootstrap completed`; subsequent phase commands write `Workflow active` and `Last metric stamp`. The file format is markdown with `Field: Value` lines; one field per line; commented-out lines (`<!-- ... -->`) are ignored.
+
+Example:
+
+```markdown
+# Workspace State
+
+Bootstrap completed: 2026-05-17 14:30 UTC
+Workflow active: ai/2026-05-17-PROJ-123/
+Last metric stamp: Plan approved 2026-05-17 14:42 UTC
+```
 
 Language configuration is **discovered at setup time** (no hard-coded language adapters). `init-workspace` scans each repo, infers toolchain details, negotiates any gaps with the user, then writes the authoritative `language-config.md` and `conventions.md` files. All agents read only these two files at runtime.
 
@@ -48,7 +108,7 @@ Language configuration is **discovered at setup time** (no hard-coded language a
 | Topic | File |
 |-------|------|
 | Four-phase language discovery pipeline + `language-config.md` schema | [`language-discovery.md`](language-discovery.md) |
-| Bash permissions proposal (Step 3c) and preflight semantics | [`permissions.md`](permissions.md) |
+| Bash permissions proposal + Read pre-approvals (Step 3c) and preflight semantics | [`permissions.md`](permissions.md) |
 | Legacy schema migration + `--keep-legacy` semantics | [`schema-upgrade.md`](schema-upgrade.md) |
 
 ## Behavior
@@ -194,7 +254,7 @@ If `--keep-legacy` was passed, follow the in-place upgrade flow in [`schema-upgr
 
 ### Step 3c — Permissions Proposal
 
-After Phase 3 negotiate completes for **all repos**, propose Bash permissions and structured-edit `settings.json`. Full procedure (collation, presentation, JSON edit, fallback, preflight semantics) in [`permissions.md`](permissions.md).
+After Phase 3 negotiate completes for **all repos**, propose Bash permissions (interactive, per-command-head) **and** auto-add Read pre-approvals for the harness plugin files (`Read(~/.claude/plugins/**)`) and every repo path in `repos-paths.md` (`Read(//<repo-path>/**)`). Read pre-approvals are added without prompting — the paths are already trusted by virtue of installation and configuration, and prompting would stall background agents that cannot respond. Full procedure (collation, presentation, JSON edit, idempotency, fallback, preflight semantics) in [`permissions.md`](permissions.md).
 
 ### Step 4 — Conventions Extraction
 
@@ -251,11 +311,101 @@ Write `.claude/context/conventions.md` with the combined result. This is the onl
 
 Generate `.claude/context/repos-paths.md` mapping repo names to local paths. For multi-language monorepos registered as two logical repos, each entry points to its own `project_root`.
 
+### Step 5b — Propose Naming Templates (IMPL-15-02 / CC-01.8)
+
+<!-- Changed by: dev-workflow-plan.md [M-15] [IMPL-15-02]
+     Reason: Propose-or-customise step for naming templates per CC-01.8.
+     CC conventions applied: CC-01.8. -->
+
+Read the shipped defaults from [`naming-defaults.md`](naming-defaults.md) and present them to the human:
+
+```
+Proposed naming templates (from naming-defaults.md):
+  Branch:     ${type}/${story_id}-${slug}
+  Commit:     #${story_id} #${task_id} ${type}: ${slug}
+  PR title:   [${repo}] ${slug}
+  Tag:        v${story_id}
+
+Accept defaults (Y), customise (c), or skip and accept later (s)?
+```
+
+### Step 5c — Cross-check against pr-conventions (IMPL-15-06)
+
+Resolve the configured git provider (from Step 1) and check its `skills/providers/<provider>/pr-conventions.md` (or `pull-requests.md`) for any required PR-title prefix or shape constraint. If the chosen `pr_title_format` conflicts (e.g. ADO requires `[<team>]` prefix and the chosen template omits it), surface the conflict to the human before writing:
+
+```
+⚠ Your chosen pr_title_format `${slug}` does not include the `[<team>]` prefix
+that the configured git provider (ado) expects per shared/pr-conventions.md.
+[a] Accept anyway (record deviation as a comment in naming-config.md)
+[c] Customise pr_title_format
+[d] Drop the cross-check entirely
+```
+
+The user's choice wins; the validator records the deviation in `naming-config.md` as a comment so future audits can locate it.
+
+### Step 5d — Emit `naming-config.md`
+
+Write `.claude/context/naming-config.md` with the four chosen templates. The file format matches the schema declared at the top of this SKILL.md. Cross-check warnings (if any) are appended as `<!-- deviation: ... -->` comments below the relevant key.
+
 ### Step 6 — Generate Provider Config
 
 Read the template from `skills/providers/provider-config-template.md` and fill in all values based on the selections from Steps 1–2. Read the relevant provider adapters from `skills/providers/<provider>/` to populate tool mappings.
 
 Write `.claude/context/provider-config.md` with the completed configuration.
+
+### Step 6b — Emit `state.md` (IMPL-02-02 / CC-05.3)
+
+Write `.claude/context/state.md` with the `Bootstrap completed` line. Use the canonical UTC timestamp helper per CC-05.3 — never reproduce the `date -u` literal inline.
+
+> Authoritative reference: [timestamp](../dev-workflow/context/timestamp.md)
+
+```bash
+TS=$(date -u +"%Y-%m-%d %H:%M UTC")
+cat > .claude/context/state.md <<EOF
+# Workspace State
+
+Bootstrap completed: ${TS}
+Workflow active: none
+Last metric stamp: Bootstrap completed ${TS}
+EOF
+```
+
+Idempotency: re-running `init-workspace` rewrites `state.md` only when the file is absent OR `--full` was passed. When the file exists and `--full` was not passed, the existing `Bootstrap completed` timestamp is preserved (the user accepted the bootstrap state previously); the `Workflow active` and `Last metric stamp` lines are reset on `--full`.
+
+### Step 6c — Mirror plugin shared files into the workspace
+
+Subagents (planner / developer / tester / reviewer) reference shared markdown
+in `agents/shared/` via their `Read` tool — but `CLAUDE_PLUGIN_ROOT` is **not**
+exported to the agent runtime (only to hook scripts), so a relative path like
+`agents/shared/engineering-principles.md` resolves against the user's project
+workspace, where the file doesn't exist. The agents report `not found`
+(non-blocking but noisy). Resolution: mirror the plugin's `agents/shared/*.md`
+into the workspace at `.claude/context/agents-shared/` so agents resolve them
+via workspace-relative paths.
+
+Run the shared-files refresh script (idempotent — overwrites existing copies
+so a plugin upgrade propagates on the next run):
+
+```bash
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/refresh-shared.sh" "$PWD"
+```
+
+`refresh-shared.sh` discovers the latest installed plugin version under
+`~/.claude/plugins/cache/ai-sdlc-harness/ai-sdlc-harness/<version>/` and copies
+every `.md` file from its `agents/shared/` directory into the workspace's
+`.claude/context/agents-shared/`. The agent index files reference
+`.claude/context/agents-shared/<file>.md` (workspace-relative) — this Step
+ensures those paths resolve.
+
+Exit codes from the script:
+- `0` — copied (count printed) or already in sync
+- `1` — plugin install not found (the user must install / update the plugin)
+- `2` — workspace lacks `.claude/context/` (an earlier Step failed)
+
+`/init-workspace --refresh-shared` re-runs only this Step — useful after a
+plugin upgrade adds new shared files. Existing workspace files are
+overwritten; agent customisations in `.claude/context/agents-shared/` are not
+preserved (the directory is plugin-managed, not user-edited).
 
 ### Step 7 — Summary
 
@@ -272,7 +422,7 @@ Present a summary:
 > - AuthService → python 3.12 (FastAPI, layered, zero_warning_support=linter-based)
 > - PaymentGateway → go 1.22 (Gin, hexagonal, zero_warning_support=native)
 >
-> **Permissions updated:** N Bash entries added to `settings.json`. Restart your session if you hit unexpected permission prompts.
+> **Permissions updated:** N Bash entries (per-command) plus 1 plugin-read entry (`Read(~/.claude/plugins/**)`) and M repo-read entries (`Read(//<repo-path>/**)`) added to `settings.json`. Restart your session if you hit unexpected permission prompts.
 >
 > **Next steps:**
 > - All context files are local and git-ignored — no commit needed.

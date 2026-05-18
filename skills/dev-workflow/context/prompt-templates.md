@@ -1,5 +1,8 @@
 # Prompt Context Templates
 
+> Owner: cross-cutting
+> Version: 1.0
+
 Standard context blocks the orchestrator inlines when constructing agent prompts in Phase 3 (`develop.md`), Phase 5 (`test.md`), Phase 6 (`create-pr.md`), and Phase 7 (`review-response.md`). Reference this file from each command instead of restating the templates inline.
 
 The orchestrator pulls all field values from `.claude/context/language-config.md` (per-repo block) and the tracker's `Repo Status` section. It substitutes values per agent before launching.
@@ -70,9 +73,14 @@ The "do NOT browse the tree" line is critical: it prevents the Tester from re-do
 
 ## CONTRACTS_CTX
 
-Include when the plan has a **Contracts section** that names this repo as a producer or consumer. Skip otherwise.
+Include when `ai/<workflow-dir>/contracts.md` exists AND at least one `## C<n>` section in it names this repo as Producer or Consumer. Skip otherwise — including when the file is absent (single-repo stories), or when the file exists but no `## C<n>` section matches this repo.
+
+> Authoritative reference: [workflow-paths](workflow-paths.md) — `contracts.md` is the canonical location.
 
 ```
-CROSS-REPO CONTRACTS (if any — from the plan's Contracts section):
-<Include any contracts where this repo is a producer or consumer.>
+CROSS-REPO CONTRACTS (from ai/<workflow-dir>/contracts.md):
+<Include each ## C<n> — <type> section verbatim where this repo is named in Producer or Consumer.>
+<Strip sections that name only other repos — the developer doesn't need them.>
 ```
+
+Note: the developer is permitted to read `contracts.md` directly via the `Read` tool if they need full context. CONTRACTS_CTX is a *narrowed* injection for token-budget efficiency, not an access-control boundary.

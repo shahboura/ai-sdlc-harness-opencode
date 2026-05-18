@@ -193,8 +193,10 @@ test_block_second_m_via_git_C() {
     # because the subject check IS the security-relevant gate.
     # We accept this case (subject is valid) — kept as a documentation
     # test that captures intended behaviour.
+    # The Co-Authored-By trailer is included in the body to satisfy the
+    # body-trailer rule; this test focuses on multi-`-m` subject parsing.
     assert_hook_allows "$HOOK" \
-        "$(mk_bash_payload 'git -C /repo commit -m "#123 #T1: valid" -m "second body line not in subject"')"
+        "$(mk_bash_payload 'git -C /repo commit -m "#123 #T1: valid" -m "second body line not in subject" -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"')"
 }
 
 test_block_bypass_via_second_m_with_invalid_first() {
