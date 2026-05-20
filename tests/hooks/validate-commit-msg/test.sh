@@ -231,4 +231,33 @@ test_allow_outside_workspace() {
     fi
 }
 
+# ── Quick-mode footer (US-E01-005) ──────────────────────────────────────────
+
+test_allow_quick_mode_footer_with_coauthor() {
+    # Quick-mode commits carry Quick-Mode: true + Co-Authored-By in the body.
+    # Both trailers must coexist; the validator should accept the message.
+    local cmd
+    cmd='git commit -m "$(cat <<'"'"'EOF'"'"'
+#quick-001 #T1: fix null check at user.ts:42
+
+Quick-Mode: true
+Co-Authored-By: Claude Code <noreply@anthropic.com>
+EOF
+)"'
+    assert_hook_allows "$HOOK" "$(mk_bash_payload "$cmd")"
+}
+
+test_block_quick_mode_without_coauthor() {
+    # Quick-mode commit with body but missing Co-Authored-By should still be
+    # blocked — Quick-Mode: true does not replace the Co-Authored-By requirement.
+    local cmd
+    cmd='git commit -m "$(cat <<'"'"'EOF'"'"'
+#quick-001 #T1: fix null check at user.ts:42
+
+Quick-Mode: true
+EOF
+)"'
+    assert_hook_blocks "$HOOK" "$(mk_bash_payload "$cmd")" "Co-Authored-By"
+}
+
 run_all_tests
