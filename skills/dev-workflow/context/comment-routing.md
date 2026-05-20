@@ -83,3 +83,18 @@ Per CC-04.3, every consumer cites this file with:
 ```
 
 Inlining the `[S<n>]/[R<n>]/[T<n>]` mapping in a command file is a CC-04.5 drift signal.
+
+---
+
+## Structured Review Comments (Orchestrator Routing Summary)
+
+<!-- Extracted from orchestrator-rules.md by dev-workflow-plan.md [M-26] [IMPL-26-03]
+     Reason: US-E03-004 surgery — consolidated into comment-routing.md.
+     CC conventions applied: CC-04.8. -->
+
+The Reviewer uses three comment prefixes (full grammar in this file above):
+- `[S<n>]` — spec compliance failure (Phase A). Short-circuits Phase B. Routed by file path: production-code path → Developer; test-file path → Tester. **Ambiguous cases (path mentions both) default to the Developer.**
+- `[R<n>]` — code quality issue in **production** code (Phase B), with severities `CRITICAL | WARNING | SUGGESTION`. Routed to the Developer.
+- `[T<n>]` — code quality / Test-Outline issue in **test** code (Phase B), same severities. Routed to the Tester.
+
+The orchestrator relays the full `Review comments` field verbatim to each downstream agent — it does not parse individual comments beyond grouping by prefix to choose the recipient. If spec fails (Phase A), only `[S<n>]` comments exist; code quality is skipped. When both `[R<n>]` and `[T<n>]` are emitted in the same review round, invoke the Tester first (so tests stabilise) and then the Developer in the same worktree.
