@@ -407,6 +407,26 @@ plugin upgrade adds new shared files. Existing workspace files are
 overwritten; agent customisations in `.claude/context/agents-shared/` are not
 preserved (the directory is plugin-managed, not user-edited).
 
+### Step 6d — Emit `cost-config.md` (IMPL-25-03 / ADR-010)
+
+<!-- Added by: dev-workflow-plan.md [M-25] [IMPL-25-03]
+     Reason: User-supplied cost-config template per ADR-010; consumed by /dev-workflow report.
+     CC conventions applied: CC-02.4.2 (null-safe cost fields), ADR-010. -->
+
+Write `.claude/context/cost-config.md` from the shipped template at
+`skills/init-workspace/templates/cost-config.md`.
+
+Idempotency: skip if the file already exists and `--full` was **not** passed —
+the user may have filled in their rates and a re-run must not overwrite them.
+On `--full`, overwrite and note in the summary that the file was reset.
+
+After writing, remind the human to fill in their model rates:
+
+> "📊 `cost-config.md` created at `.claude/context/cost-config.md`.
+> Edit the rate table to enable `$` cost columns in `/dev-workflow report`.
+> Leave cells empty for models you don't use — empty rates render as
+> `cost: n/a` rather than `$0.00`."
+
 ### Step 7 — Summary
 
 Present a summary:
@@ -417,6 +437,7 @@ Present a summary:
 > - `repos-paths.md` — local paths configured
 > - `language-config.md` — [N] repos with discovered toolchains
 > - `conventions.md` — team rules + language baselines + repo-specific patterns
+> - `cost-config.md` — fill in model rates to enable `$` columns in reports (ADR-010)
 >
 > **Languages discovered:**
 > - AuthService → python 3.12 (FastAPI, layered, zero_warning_support=linter-based)
