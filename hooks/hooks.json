@@ -143,6 +143,18 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/metrics-token-collector.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "SessionStart": []
   }
 }
