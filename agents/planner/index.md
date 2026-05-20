@@ -77,10 +77,65 @@ and one-line intents that the Tester will implement in Phase 3 before the Develo
 The Test Outline is part of the plan document and is reviewed by the human at GATE #1.
 
 - Name tests using the `Subject_Scenario_Outcome` convention for the target language/framework.
-- Mark `test-required: false` for tasks with no observable behaviour: config changes, dependency
-  bumps, file renames, scaffolding with no branching logic.
+- Mark `test-required: false` for tasks that fall into a safe category — see [TDD-Skip Heuristics](#tdd-skip-heuristics-fr-10) below for worked examples and exact category names.
 - Record `test-required: true|false` in the Notes column of every tracker task row.
 - Create one `T-TEST-<RepoName>` tracker row per affected repo for Phase 5 test hardening (e.g., `T-TEST-AuthService`). Notes value: `Phase 5`.
+
+## TDD-Skip Heuristics (FR-10)
+
+<!-- Added by: dev-workflow-plan.md [M-25] [IMPL-25-02]
+     Reason: FR-10 worked examples so the Planner can cite a specific safe category
+     instead of guessing. Category names are the single source of truth shared with
+     scripts/quick-mode-classify.py (ADR-011, CC-04.1).
+     CC conventions applied: CC-04.1 (single source of truth), ADR-011. -->
+
+Use `test-required: false` **only** when a task falls entirely within one of the four
+safe categories below. The category name you write in the Notes column must exactly
+match the canonical identifier — these names are shared with
+`scripts/quick-mode-classify.py` and `.claude/context/quick-mode-config.md` (ADR-011).
+
+| Category | Canonical identifier | When `test-required: false` is correct |
+|---|---|---|
+| UI style / copy | `ui-style-copy` | CSS tweaks, wording changes, icon swaps, theme variables — no logic branch added or removed. |
+| Infrastructure config | `infra-config` | YAML/Terraform/Helm changes where no new execution path is introduced; just value or flag changes. |
+| Exploratory data scripts | `exploratory-data` | One-off analysis scripts, Jupyter notebooks, or migration scripts that are run manually and discarded — not part of the production call graph. |
+| Docs / changelog only | `doc-only` | Changes only to `.md`, `.rst`, `CHANGELOG`, inline comments, or `README` — zero executable code changed. |
+
+### Worked examples
+
+**`ui-style-copy`** — changing a button label and its CSS colour:
+```
+T1  Update "Submit" → "Send" label and primary-blue hex   test-required: false · Why-no-test: ui-style-copy
+```
+
+**`infra-config`** — bumping a Terraform variable default:
+```
+T1  Increase default RDS instance size from db.t3.micro to db.t3.small
+    test-required: false · Why-no-test: infra-config
+```
+
+**`exploratory-data`** — adding a one-time data-quality script:
+```
+T1  Script to count null user_ids in production snapshot (run once, delete after)
+    test-required: false · Why-no-test: exploratory-data
+```
+
+**`doc-only`** — updating CHANGELOG and a README section:
+```
+T1  Add v2.1 entry to CHANGELOG.md and update install steps in README
+    test-required: false · Why-no-test: doc-only
+```
+
+### When to split a task instead
+
+If part of the change is behavioural and part is cosmetic, **split into two tasks**:
+- T1 (behavioural logic): `test-required: true`
+- T2 (labels/copy): `test-required: false · Why-no-test: ui-style-copy`
+
+Never apply `test-required: false` to a task that also introduces logic. When in doubt,
+set `test-required: true` — the reviewer can downgrade.
+
+---
 
 ## Pre-Flight Check
 
