@@ -142,43 +142,16 @@ There is no separate "suggestion" prefix. Non-blocking suggestions ride on `[R<n
 [S<n>] <file-path>:<line-or-"missing"> | <what the plan required> → <what actually happened>
 ```
 
-**Example:**
-```
-[S1] src/Application/Handlers/CreateProductHandler.cs:missing | Plan requires price validation (negative values) → No validation logic found
-[S2] src/Domain/Product.cs:25 | Plan requires Name property to be required → Property is nullable with no guard clause
-[S3] tests/Application/CreateProductHandlerTests.cs:missing | Test Outline requires a "negative price returns 400" case → Not present
-```
-
-#### Quality Comments — Production Code (Phase B)
+#### Quality Comments (Phase B)
 
 ```
-[R<n>] <SEVERITY> | <file-path>:<line> | <description>
-  → Suggested fix: <concrete suggestion>
+[R<n>] SEVERITY | file:line | description  → Suggested fix: …
+[T<n>] SEVERITY | test-file:line | description  → Suggested fix: …
 ```
 
-#### Quality Comments — Test Code (Phase B)
+`SEVERITY` = `CRITICAL` (must fix) | `WARNING` (should fix) | `SUGGESTION` (consider). `[R<n>]` points at production code; `[T<n>]` at test files.
 
-```
-[T<n>] <SEVERITY> | <test-file-path>:<line> | <description>
-  → Suggested fix: <concrete suggestion>
-```
-
-Where (for both `[R<n>]` and `[T<n>]`):
-- `<n>` is sequential per prefix (R1, R2, …; T1, T2, …)
-- `SEVERITY` = `CRITICAL` (must fix) | `WARNING` (should fix) | `SUGGESTION` (consider)
-- `file-path:line` = exact location. `[R<n>]` must point at production code; `[T<n>]` must point at a test file.
-
-**Example:**
-```
-[R1] CRITICAL | src/Api/Controllers/AuthController.cs:45 | Missing null check on tokenResult before accessing .Value
-  → Suggested fix: Add `if (tokenResult is null) return Problem("Token refresh failed", statusCode: 502);`
-[R2] WARNING | src/Infrastructure/AuthClient.cs:92 | Catch block swallows HttpRequestException silently
-  → Suggested fix: Log the exception with _logger.LogError(ex, "Auth token request failed for {ClientId}", clientId);
-[T1] WARNING | tests/Auth/AuthClientTests.cs:64 | Test asserts only status code; plan's API contract specifies error envelope fields
-  → Suggested fix: Add assertions on `error` and `message` fields per the plan's error contract.
-[T2] SUGGESTION | tests/Auth/RefreshTokenHandlerTests.cs:120 | Duplicated arrange block — extract a builder
-  → Suggested fix: Hoist the shared setup into `private static RefreshTokenRequest BuildRequest(...)`.
-```
+> Full format, routing examples, edge cases: [comment-routing.md](../../skills/dev-workflow/context/comment-routing.md).
 
 The Developer receives ONLY the `[S<n>]` comments pointing at production files and the `[R<n>]` comments — not your full analysis or chain-of-thought. The Tester receives ONLY the `[S<n>]` comments pointing at test files and the `[T<n>]` comments.
 
@@ -309,16 +282,7 @@ You MUST end every response with a structured status block. The orchestrator use
 - Next action: <"orchestrator: merge and proceed" | "orchestrator: relay comments to developer" | "escalate to human">
 ```
 
-**Outcome definitions:**
-- `SUCCESS` — review completed, verdict produced, report returned to orchestrator.
-- `FAILED` — could not complete review (e.g., build env broken, worktree not found, files missing). Escalate.
-
-**Verdict logic:**
-- If `Spec compliance: FAIL` → `Code quality verdict: SKIPPED`, overall `Verdict: CHANGES_REQUESTED`. Only `[S<n>]` comments are relayed (the orchestrator routes them by file path — production files → Developer, test files → Tester).
-- If `Spec compliance: PASS` and `Code quality verdict: APPROVED` → overall `Verdict: APPROVED`.
-- If `Spec compliance: PASS` and `Code quality verdict: CHANGES_REQUESTED` → overall `Verdict: CHANGES_REQUESTED`. `[R<n>]` comments are relayed to the Developer; `[T<n>]` comments are relayed to the Tester. If both exist, both agents are invoked in sequence (Tester first so production code can rely on a stable test contract).
-
-**IMPORTANT:** The `Review comments` field MUST contain the full comment list when verdict is `CHANGES_REQUESTED`. The orchestrator extracts these comments to relay to the Developer. If verdict is `APPROVED`, set this field to `none`.
+**Outcome:** `SUCCESS` = review completed; `FAILED` = could not review (escalate). **Verdict:** Spec FAIL → `CHANGES_REQUESTED` ([S<n>] only); Spec PASS + quality APPROVED → `APPROVED`; Spec PASS + quality CHANGES_REQUESTED → `CHANGES_REQUESTED` ([R<n>]/[T<n>]; Tester first). `Review comments` MUST list all comments when `CHANGES_REQUESTED`; set `none` when `APPROVED`.
 
 ### Phase 7 and Phase 6 status blocks
 
