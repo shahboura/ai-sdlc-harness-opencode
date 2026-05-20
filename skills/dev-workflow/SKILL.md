@@ -230,6 +230,7 @@ Pass all three values to downstream commands and agents.
 |---------|------|-------|-------------|
 | `requirements` | `commands/requirements.md` | 1 | Requirements Ingestion |
 | `plan` | `commands/plan.md` | 2 | Planning & Approval |
+| `quick` | `commands/quick.md` | Q | Quick Mode (fast-path: Developer + Reviewer only; no Planner/Tester per CC-05.8) |
 | `preflight` | `commands/preflight.md` | 2.5 | Branch creation (only in repos the plan named) + plan commit |
 | `develop` | `commands/develop.md` | 3 | Development Loop |
 | `approve-impl` | `commands/approve-impl.md` | 4 | Human Approval of Implementation |
