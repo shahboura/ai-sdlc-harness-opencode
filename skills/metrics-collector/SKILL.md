@@ -76,24 +76,34 @@ Pure data aggregator over a single per-workflow tracker. Reads timestamp stamps 
 7. **Stamp the tracker** with `Metrics collected <ts> — round <n>` using the canonical UTC timestamp.
 8. **Exit 0** on success.
 
-## `ai/_metrics-log.csv` schema (IMPL-17-04)
+## `ai/_metrics-log.csv` schema (IMPL-17-04, IMPL-25-03)
 
-| Column | Required | Notes |
-|---|---|---|
-| `schema_version` | ✅ | Current `1.0.0`. First column on every row — drives mixed-version reads in downstream BI. |
-| `work_item_id` | ✅ | Post-`safe_id()` story identifier. |
-| `round` | ✅ | `0` / `1..N` / `final`. |
-| `timestamp_utc` | ✅ | Row write time. |
-| `cycle_time_minutes` | ✅ | Minutes between `Plan approved` and `PR created`. |
-| `p3_duration_minutes` | ✅ | Phase 3 development duration. |
-| `p5_duration_minutes` | ✅ | Phase 5 test-hardening duration. |
-| `p7_duration_minutes` | optional | Phase 7 review-response duration (per round). |
-| `reviewer_rework_rounds` | ✅ | Aggregated `Review Rounds` across tasks. |
-| `pr_review_rounds` | ✅ | Count of P7 cycles. |
-| `coverage_pct` | ✅ | Final per-story coverage. |
-| `defect_escape_count` | ✅ | `[S<n>]` source-code comments. |
+<!-- Updated by: dev-workflow-plan.md [M-25] [IMPL-25-03]
+     Reason: v1.1.0 schema adds token-usage columns (ADR-002 orchestrator capture)
+     and mode column (FR-1.7 quick|full marker).
+     CC conventions applied: CC-02.4.2 (null-safe token fields), CC-04.6. -->
 
-**Schema evolution policy** (CC-04.6): bump minor when adding columns (M-18 `security_findings_*`, M-19 `hotfix-N` rounds, etc.); bump major + ship a migration script when removing columns. Older rows keep their `schema_version`; downstream BI handles mixed-version reads.
+| Column | Added | Required | Notes |
+|---|---|---|---|
+| `schema_version` | v1.0.0 | ✅ | Current `1.1.0`. First column — drives mixed-version reads. |
+| `work_item_id` | v1.0.0 | ✅ | Post-`safe_id()` story identifier. |
+| `round` | v1.0.0 | ✅ | `0` / `1..N` / `final`. |
+| `timestamp_utc` | v1.0.0 | ✅ | Row write time. |
+| `cycle_time_minutes` | v1.0.0 | ✅ | Minutes between `Plan approved` and `PR created`. |
+| `p3_duration_minutes` | v1.0.0 | ✅ | Phase 3 development duration. |
+| `p5_duration_minutes` | v1.0.0 | ✅ | Phase 5 test-hardening duration. |
+| `p7_duration_minutes` | v1.0.0 | optional | Phase 7 review-response duration (per round). |
+| `reviewer_rework_rounds` | v1.0.0 | ✅ | Aggregated `Review Rounds` across tasks. |
+| `pr_review_rounds` | v1.0.0 | ✅ | Count of P7 cycles. |
+| `coverage_pct` | v1.0.0 | ✅ | Final per-story coverage. |
+| `defect_escape_count` | v1.0.0 | ✅ | `[S<n>]` source-code comments. |
+| `tokens_input` | **v1.1.0** | optional | Input tokens for this story (ADR-002). Empty until `metrics-token-collector.sh` lands (US-E02-003). Render as "tokens unavailable" not `0` when empty. |
+| `tokens_output` | **v1.1.0** | optional | Output tokens. Same null policy as `tokens_input`. |
+| `tokens_cache_read` | **v1.1.0** | optional | Cache read tokens. Same null policy. |
+| `tokens_cache_write` | **v1.1.0** | optional | Cache write tokens. Same null policy. |
+| `mode` | **v1.1.0** | ✅ | Workflow mode: `quick` or `full` (FR-1.7). Default `full` for pre-v2.1 trackers. |
+
+**Schema evolution policy** (CC-04.6): bump minor when adding columns; bump major + ship a migration script when removing columns. Older rows keep their original `schema_version` ("1.0.0") — downstream BI handles mixed-version reads. The collector auto-migrates v1.0.0 files to v1.1.0 on the first v1.1.0 append (idempotent).
 
 ## Outputs
 

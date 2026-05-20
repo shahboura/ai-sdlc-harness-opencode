@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""metrics_collector — workflow metrics aggregator (IMPL-17-03).
+"""metrics_collector — workflow metrics aggregator (IMPL-17-03, IMPL-25-03).
 
 Pure data aggregator. Reads a per-workflow tracker, computes the six
 required workflow aggregates per `skills/metrics-collector/SKILL.md`, and
@@ -26,8 +26,16 @@ Exit codes:
         sibling is written; the CSV is NOT appended on failure.
     2   precondition not met (workflow dir / tracker absent).
 
-Created by: dev-workflow-plan.md [M-17] [IMPL-17-03]
-CC conventions applied: CC-01.5 (exit codes), CC-04.3, CC-05.7, CC-05.3.
+Schema changelog:
+    v1.0.0  Original 12 columns (IMPL-17-04).
+    v1.1.0  Added tokens_input, tokens_output, tokens_cache_read,
+            tokens_cache_write (orchestrator-aggregated per ADR-002;
+            null until metrics-token-collector.sh hook lands in US-E02-003)
+            and mode (quick|full per FR-1.7 / tracker-field-schema.md v1.1).
+
+Created by: dev-workflow-plan.md [M-17] [IMPL-17-03], [M-25] [IMPL-25-03]
+CC conventions applied: CC-01.5 (exit codes), CC-02.4.2 (token fields null-safe),
+                        CC-04.3, CC-05.7, CC-05.3, ADR-002.
 """
 from __future__ import annotations
 
@@ -39,13 +47,13 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 METRICS_CSV_FILENAME = "_metrics-log.csv"
 
 # Canonical timestamp format per CC-05.3.
 TS_FMT = "%Y-%m-%d %H:%M UTC"
 
-# CSV columns per IMPL-17-04 schema.
+# CSV columns for v1.1.0 schema (IMPL-17-04 base + IMPL-25-03 additions).
 CSV_COLUMNS = [
     "schema_version",
     "work_item_id",
@@ -59,7 +67,35 @@ CSV_COLUMNS = [
     "pr_review_rounds",
     "coverage_pct",
     "defect_escape_count",
+    # v1.1.0 additions (IMPL-25-03)
+    # Populated by metrics-token-collector.sh (US-E02-003); null until that hook lands.
+    # ADR-002: orchestrator-aggregated from PostToolUse payloads, never agent self-report.
+    "tokens_input",
+    "tokens_output",
+    "tokens_cache_read",
+    "tokens_cache_write",
+    # Workflow mode per FR-1.7 / tracker-field-schema.md v1.1.
+    "mode",
 ]
+
+# v1.0.0 column set — used to detect files that need migration.
+_V1_0_COLUMNS = [
+    "schema_version",
+    "work_item_id",
+    "round",
+    "timestamp_utc",
+    "cycle_time_minutes",
+    "p3_duration_minutes",
+    "p5_duration_minutes",
+    "p7_duration_minutes",
+    "reviewer_rework_rounds",
+    "pr_review_rounds",
+    "coverage_pct",
+    "defect_escape_count",
+]
+
+# Sentinel used when token data is unavailable (ADR-002 null-safe contract).
+_TOKEN_UNAVAILABLE = ""
 
 
 def _parse_timestamp(s: str) -> Optional[dt.datetime]:
@@ -172,6 +208,114 @@ def _extract_coverage(workflow_metrics: Dict[str, str]) -> Optional[float]:
         return None
 
 
+def _extract_mode(tracker_text: str) -> str:
+    """Extract the workflow mode from tracker front-matter.
+
+    Returns "quick" if the tracker contains `Mode: quick`, else "full"
+    (the default for pre-v2.1 trackers that pre-date the Mode: field).
+    Per FR-1.7 and tracker-field-schema.md v1.1.
+    """
+    m = re.search(r"^Mode:\s*(\S+)", tracker_text, re.MULTILINE | re.IGNORECASE)
+    if m:
+        val = m.group(1).strip().lower()
+        return "quick" if val == "quick" else "full"
+    return "full"
+
+
+def _load_token_totals(workflow_dir: Path) -> Dict[str, str]:
+    """Aggregate token usage from `.token-log.jsonl` in the workflow dir.
+
+    Returns a dict with keys tokens_input, tokens_output, tokens_cache_read,
+    tokens_cache_write — all empty strings when the log is absent or
+    when a provider did not populate usage fields (ADR-002 null-safe contract).
+
+    The .token-log.jsonl is written by metrics-token-collector.sh (US-E02-003).
+    Until that hook lands, this function always returns empty values.
+    """
+    import json  # stdlib, local import to keep the top-level clean
+
+    null_result: Dict[str, str] = {
+        "tokens_input": _TOKEN_UNAVAILABLE,
+        "tokens_output": _TOKEN_UNAVAILABLE,
+        "tokens_cache_read": _TOKEN_UNAVAILABLE,
+        "tokens_cache_write": _TOKEN_UNAVAILABLE,
+    }
+
+    log_path = workflow_dir / ".token-log.jsonl"
+    if not log_path.is_file():
+        return null_result
+
+    totals: Dict[str, int] = {
+        "tokens_input": 0,
+        "tokens_output": 0,
+        "tokens_cache_read": 0,
+        "tokens_cache_write": 0,
+    }
+    any_data = False
+    try:
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for key in totals:
+                v = entry.get(key)
+                if v is not None:
+                    try:
+                        totals[key] += int(v)
+                        any_data = True
+                    except (TypeError, ValueError):
+                        pass
+    except (OSError, UnicodeDecodeError):
+        return null_result
+
+    if not any_data:
+        return null_result
+    return {k: str(v) for k, v in totals.items()}
+
+
+def _migrate_csv_if_needed(csv_path: Path) -> None:
+    """Upgrade a v1.0.0 `_metrics-log.csv` to v1.1.0 in place.
+
+    - No-op when the file is already v1.1.0 (idempotent).
+    - No-op when the file does not exist (caller handles the new-file path).
+    - Rewrites the file atomically (tmp → rename) when migration is needed.
+    - Old rows keep their original `schema_version` value ("1.0.0") so
+      downstream consumers can distinguish pre-v1.1.0 rows.
+    - New columns are padded with '' for old rows per ADR-002 null-safe contract.
+    """
+    if not csv_path.exists():
+        return
+
+    with csv_path.open(newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        if not reader.fieldnames:
+            return  # empty or header-only file with no usable header
+        existing_cols = list(reader.fieldnames)
+        # Already up-to-date if all v1.1.0 columns are present.
+        if all(c in existing_cols for c in CSV_COLUMNS):
+            return
+        rows = list(reader)
+
+    tmp = csv_path.with_suffix(".csv.migration_tmp")
+    try:
+        with tmp.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                padded = {col: row.get(col, "") for col in CSV_COLUMNS}
+                # Preserve the original schema_version on old rows so downstream
+                # BI can identify pre-v1.1 rows (do NOT overwrite with "1.1.0").
+                writer.writerow(padded)
+        tmp.replace(csv_path)
+    except Exception:  # pylint: disable=broad-except
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _count_pr_review_rounds(workflow_dir: Path) -> int:
     return len(list(workflow_dir.glob("pr-comment-analysis-report-*.md")))
 
@@ -212,6 +356,7 @@ def _compute_aggregates(
     workflow_metrics: Dict[str, str],
     tasks: List[Dict[str, str]],
     workflow_dir: Path,
+    mode: str = "full",
 ) -> Dict[str, object]:
     plan_approved = _parse_timestamp(workflow_metrics.get("Plan approved", ""))
     dev_started = _parse_timestamp(workflow_metrics.get("Development started", ""))
@@ -231,6 +376,7 @@ def _compute_aggregates(
         workflow_metrics.get("PR review response completed", "")
     )
 
+    token_totals = _load_token_totals(workflow_dir)
     return {
         "cycle_time_minutes": _minutes_between(plan_approved, pr_created),
         "p3_duration_minutes": _minutes_between(dev_started, dev_completed),
@@ -240,6 +386,12 @@ def _compute_aggregates(
         "pr_review_rounds": _count_pr_review_rounds(workflow_dir),
         "coverage_pct": _extract_coverage(workflow_metrics),
         "defect_escape_count": _count_defect_escapes(workflow_dir),
+        # v1.1.0 fields — null (empty string) until US-E02-003 hook lands.
+        "tokens_input": token_totals["tokens_input"],
+        "tokens_output": token_totals["tokens_output"],
+        "tokens_cache_read": token_totals["tokens_cache_read"],
+        "tokens_cache_write": token_totals["tokens_cache_write"],
+        "mode": mode,
     }
 
 
@@ -284,6 +436,23 @@ def _render_report(
     else:
         lines.append("(no task rows parsed)")
     lines.append("")
+    lines.append("## Token Usage")
+    lines.append("")
+    lines.append("| Field | Value |")
+    lines.append("|---|---|")
+    token_keys = [
+        ("tokens_input", "Input tokens"),
+        ("tokens_output", "Output tokens"),
+        ("tokens_cache_read", "Cache read tokens"),
+        ("tokens_cache_write", "Cache write tokens"),
+    ]
+    for agg_key, label in token_keys:
+        raw = aggregates.get(agg_key, "")
+        # CC-02.4.2 / ADR-002: empty string means the hook hasn't landed yet —
+        # render "tokens unavailable" rather than "0" or blank.
+        display = raw if raw != "" else "tokens unavailable"
+        lines.append(f"| {label} | {display} |")
+    lines.append("")
     lines.append("## Source Workflow Metrics")
     lines.append("")
     if workflow_metrics:
@@ -302,8 +471,14 @@ def _append_csv_row(
     generated_at: str,
     aggregates: Dict[str, object],
 ) -> None:
+    """Append one v1.1.0 row to the CSV, migrating from v1.0.0 if needed.
+
+    Migration is idempotent: safe to call on an already-v1.1.0 file.
+    New files get the v1.1.0 header on first write.
+    """
+    _migrate_csv_if_needed(csv_path)
     new_file = not csv_path.exists()
-    row = {
+    row: Dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "work_item_id": work_item_id,
         "round": round_label,
@@ -313,6 +488,7 @@ def _append_csv_row(
         if key in row:
             continue
         v = aggregates.get(key)
+        # None → "" (not "0") per CC-02.4.2 null-safe contract for token fields.
         row[key] = "" if v is None else v
     with csv_path.open("a", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
@@ -385,6 +561,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     text = tracker_path.read_text(encoding="utf-8")
     workflow_metrics = _parse_workflow_metrics(text)
     tasks = _parse_task_rows(text)
+    mode = _extract_mode(text)
 
     err = _validate(workflow_metrics, tasks)
     if err:
@@ -395,7 +572,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 1
 
-    aggregates = _compute_aggregates(workflow_metrics, tasks, workflow_dir)
+    aggregates = _compute_aggregates(workflow_metrics, tasks, workflow_dir, mode=mode)
     generated_at = _utc_now()
 
     report = _render_report(
