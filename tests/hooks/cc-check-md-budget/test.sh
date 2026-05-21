@@ -92,42 +92,58 @@ test_classification_single_tier_per_file() {
 
 test_soft_ceiling_breach_warns_exits_0() {
     # agent-prompt tier: soft 250, hard 400
-    # Write 260 lines → above soft, below hard
-    _write_lines "agents/myagent/index.md" 260
+    # Write 260 lines → above soft, below hard.
+    # Use --hard-cap-mode warn to isolate from default-mode changes (US-E03-009).
+    _write_lines "agents/myagent2/index.md" 260
 
-    _run
+    _run --hard-cap-mode warn
     [ "$_last_rc" -eq 0 ] || {
         _fail "expected exit 0 for soft-ceiling breach in warn mode, got $_last_rc"
         return
     }
-    if ! printf '%s' "$_last_stderr" | grep -qE "WARN.*agents/myagent/index\.md"; then
+    if ! printf '%s' "$_last_stderr" | grep -qE "WARN.*agents/myagent2/index\.md"; then
         _fail "expected WARN for soft-ceiling breach, stderr was: $_last_stderr"
         return
     fi
-    if printf '%s' "$_last_stderr" | grep -qE "BLOCK.*agents/myagent/index\.md"; then
+    if printf '%s' "$_last_stderr" | grep -qE "BLOCK.*agents/myagent2/index\.md"; then
         _fail "should not emit BLOCK for soft-ceiling breach"
     fi
 }
 
 # ---------------------------------------------------------------------------
-# TEST-193a: Hard cap breach — WARN in v2.1 warn mode, exits 0
+# TEST-193a: Hard cap breach — BLOCK in v2.1.1 default block mode, exits 2
 # ---------------------------------------------------------------------------
 
-test_hard_cap_breach_warns_in_v21_mode() {
-    # SKILL.md tier: hard 400; write 450 lines
-    _write_lines "skills/myskill/SKILL.md" 450
+test_hard_cap_breach_blocks_in_default_mode() {
+    # SKILL.md tier: hard 400; write 450 lines.
+    # v2.1.1: _DEFAULT_HARD_CAP_MODE = "block" (US-E03-009 flip).
+    _write_lines "skills/myskill2/SKILL.md" 450
 
-    _run  # default is warn mode
-    [ "$_last_rc" -eq 0 ] || {
-        _fail "expected exit 0 for hard-cap breach in warn mode, got $_last_rc"
+    _run  # default is now block mode (v2.1.1)
+    [ "$_last_rc" -eq 2 ] || {
+        _fail "expected exit 2 for hard-cap breach in default block mode, got $_last_rc"
         return
     }
-    if ! printf '%s' "$_last_stderr" | grep -qE "WARN.*skills/myskill/SKILL\.md"; then
-        _fail "expected WARN for hard-cap breach in warn mode, stderr was: $_last_stderr"
+    if ! printf '%s' "$_last_stderr" | grep -qE "BLOCK.*skills/myskill2/SKILL\.md"; then
+        _fail "expected BLOCK for hard-cap breach in default mode, stderr was: $_last_stderr"
+    fi
+}
+
+# TEST-193a (legacy): Hard cap breach — WARN when explicitly using warn mode
+test_hard_cap_breach_warns_in_explicit_warn_mode() {
+    _write_lines "skills/myskill3/SKILL.md" 450
+
+    _run --hard-cap-mode warn
+    [ "$_last_rc" -eq 0 ] || {
+        _fail "expected exit 0 for hard-cap breach in explicit warn mode, got $_last_rc"
+        return
+    }
+    if ! printf '%s' "$_last_stderr" | grep -qE "WARN.*skills/myskill3/SKILL\.md"; then
+        _fail "expected WARN in explicit warn mode, stderr was: $_last_stderr"
         return
     fi
-    if printf '%s' "$_last_stderr" | grep -qE "BLOCK.*skills/myskill/SKILL\.md"; then
-        _fail "must not emit BLOCK in warn mode (v2.1)"
+    if printf '%s' "$_last_stderr" | grep -qE "BLOCK.*skills/myskill3/SKILL\.md"; then
+        _fail "must not emit BLOCK when --hard-cap-mode warn is explicit"
     fi
 }
 
@@ -154,21 +170,38 @@ test_hard_cap_breach_blocks_in_block_mode() {
 # ---------------------------------------------------------------------------
 
 test_valid_exempt_marker_suppresses_findings() {
+    # Use an isolated workspace so no other oversize files from previous tests
+    # cause block-mode exit 2 to fire for the wrong reason.
+    local iso_ws
+    iso_ws="$(mktemp -d -t cc_exempt_iso.XXXXXX)"
     local marker='<!-- cc-md-budget: exempt reason="structural reference table; irreducible" -->'
-    # 450 lines (over hard 400) but with valid exemption marker
-    _write_lines "skills/myskill/SKILL.md" 450 "$marker"
 
-    # Test in both modes — exempt should suppress regardless of mode
-    _run --hard-cap-mode block
-    [ "$_last_rc" -eq 0 ] || {
-        _fail "expected exit 0 for exempted file in block mode, got $_last_rc"
+    mkdir -p "$iso_ws/skills/exemptskill"
+    {
+        printf '%s\n' "$marker"
+        python3 -c "
+for i in range(449):
+    print(f'line {i+2}')
+"
+    } > "$iso_ws/skills/exemptskill/SKILL.md"
+
+    # Run against the isolated workspace — only one file, with valid exemption
+    local json rc
+    json="$(python3 "$SCRIPT" "$iso_ws" --hard-cap-mode block 2>/tmp/cc_exempt_stderr)"
+    rc=$?
+    local stderr_out
+    stderr_out="$(cat /tmp/cc_exempt_stderr 2>/dev/null)"
+    rm -rf "$iso_ws" /tmp/cc_exempt_stderr 2>/dev/null || true
+
+    [ "$rc" -eq 0 ] || {
+        _fail "expected exit 0 for exempted file in block mode, got $rc; stderr: $stderr_out"
         return
     }
-    if printf '%s' "$_last_stderr" | grep -qE "(WARN|BLOCK).*skills/myskill/SKILL\.md"; then
-        _fail "WARN/BLOCK must not appear for exempted file, stderr was: $_last_stderr"
+    if printf '%s' "$stderr_out" | grep -qE "(WARN|BLOCK).*exemptskill/SKILL\.md"; then
+        _fail "WARN/BLOCK must not appear for exempted file, stderr was: $stderr_out"
         return
     fi
-    if ! printf '%s' "$_last_stdout" | grep -qF "EXEMPT"; then
+    if ! printf '%s' "$json" | grep -qF "EXEMPT"; then
         _fail "EXEMPT line missing from stdout for exempted file"
     fi
 }
@@ -179,9 +212,9 @@ test_valid_exempt_marker_suppresses_findings() {
 
 test_empty_reason_exemption_is_rejected() {
     local marker='<!-- cc-md-budget: exempt reason="" -->'
-    _write_lines "skills/myskill/SKILL.md" 450 "$marker"
+    _write_lines "skills/myskill4/SKILL.md" 450 "$marker"
 
-    _run  # warn mode
+    _run --hard-cap-mode warn  # explicit warn so exit code is predictable
     # Must still exit 0 (warn mode), but should emit a warning about invalid marker
     [ "$_last_rc" -eq 0 ] || {
         _fail "expected exit 0 in warn mode for invalid marker, got $_last_rc"
@@ -197,13 +230,13 @@ test_empty_reason_exemption_is_rejected() {
 # ---------------------------------------------------------------------------
 
 test_ok_file_is_silent() {
-    # command tier: soft 200, hard 400; write 50 lines
-    _write_lines "skills/myskill/commands/do-thing.md" 50
+    # command tier: soft 200, hard 400; write 50 lines — isolated path, explicit mode
+    _write_lines "skills/okskill/commands/ok-thing.md" 50
 
-    _run
+    _run --hard-cap-mode warn
     [ "$_last_rc" -eq 0 ] || { _fail "expected exit 0 for OK file, got $_last_rc"; return; }
     # OK files are suppressed from output
-    if printf '%s' "$_last_stderr$_last_stdout" | grep -qF "skills/myskill/commands/do-thing.md"; then
+    if printf '%s' "$_last_stderr$_last_stdout" | grep -qF "skills/okskill/commands/ok-thing.md"; then
         _fail "OK file should be silent (suppressed), but appeared in output"
     fi
 }

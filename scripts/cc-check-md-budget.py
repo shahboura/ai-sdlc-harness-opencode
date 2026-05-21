@@ -33,7 +33,7 @@ from typing import List, NamedTuple, Optional
 # v2.1 release constant: "warn"  ← flip to "block" in v2.1.1 (US-E03-009)
 # Override via CC_MD_BUDGET_HARD_CAP_MODE env var (tests only; ADR-006).
 # ---------------------------------------------------------------------------
-_DEFAULT_HARD_CAP_MODE = "warn"  # ADR-006: time-bounded exception, v2.1
+_DEFAULT_HARD_CAP_MODE = "block"  # ADR-006: time-bounded exception ended at v2.1.1 (US-E03-009)
 
 # ---------------------------------------------------------------------------
 # Tier definitions  (CC-04.8)
