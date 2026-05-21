@@ -34,6 +34,18 @@ These rules apply to ALL phases of the dev-workflow. Individual command files mu
    - Phase 6: orchestrator presents summary, then uses `pr-creator` skill
    - Phase 7: `@ai-sdlc-reviewer` (pr-comment-analysis mode), `@ai-sdlc-planner` (pr-response-tasks mode), then re-enter Phase 3 loop for new tasks
 
+   > **Agent invocation contract (CC-04).** The `@ai-sdlc-X` form above is mention syntax for delegation prose. When invoking the `Agent` tool, pass the fully-qualified `subagent_type`:
+   >
+   > | Mention | `subagent_type` |
+   > |---|---|
+   > | `@ai-sdlc-planner` | `ai-sdlc-harness:planner:ai-sdlc-planner` |
+   > | `@ai-sdlc-developer` | `ai-sdlc-harness:developer:ai-sdlc-developer` |
+   > | `@ai-sdlc-tester` | `ai-sdlc-harness:tester:ai-sdlc-tester` |
+   > | `@ai-sdlc-reviewer` (Phase 3 per-task review / Phase 5 test review) | `ai-sdlc-harness:reviewer:ai-sdlc-reviewer` |
+   > | `@ai-sdlc-reviewer` (Phase 6 pre-PR mode) | `ai-sdlc-harness:reviewer:ai-sdlc-pre-pr` |
+   > | `@ai-sdlc-reviewer` (Phase 7 pr-comment-analysis mode) | `ai-sdlc-harness:reviewer:ai-sdlc-pr-comment-analysis` |
+   > | `@ai-sdlc-reviewer` (inter-gate request-triage mode) | `ai-sdlc-harness:reviewer:ai-sdlc-request-triage` |
+
 3. **The orchestrator MAY only:**
    - Run git commands, including `git -C <repo-path>` for multi-repo operations (branch creation, merge from worktrees, branch cleanup)
    - Read task tracker files (to check status and present summaries)
