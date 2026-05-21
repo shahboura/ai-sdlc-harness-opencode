@@ -334,64 +334,22 @@ git -C "<REPO_PATH>" push --force-with-lease origin <feature-branch>
 
 #### Reuse path (`Reuse: true`) — fresh commit + fast-forward push
 
-In reuse mode the existing PR/MR is open against the feature branch with whatever review
-activity, CI runs, and inline comments have accumulated since it was first created.
-Amending and force-pushing the just-pushed Step 6 tracker commit produces two problems:
+Do NOT amend + force-push in reuse mode: force-push noise on the open PR orphans inline comments, and amend would overwrite an existing `PR created` metric from a prior run. Instead, create a **fresh** tracker-update commit (only if `PR created` is still `—`) and fast-forward push.
 
-1. **Force-push noise on the open PR.** Reviewers get notified, inline comments tied to
-   the previous tracker-commit SHA become orphaned references on most providers, and the
-   "Force-pushed" banner in the PR timeline distracts from the actual change.
-2. **Lost history.** The original PR may have been created in a prior run that completed
-   `PR created` correctly; this run's amend would overwrite the stored metric value with
-   the current re-run timestamp, silently losing the original creation date.
+**Set the metric only if it's still `—`.** If already populated, skip the commit.
 
-Instead, write the metric and create a **fresh** tracker-update commit on top of the
-Step 6 tracker commit, then fast-forward push. Analogous to Phase 7 Step 9's
-new-commit-not-amend pattern in `commands/review-response.md` (and for the same reason).
-
-**Set the metric only if it's still `—`** (the original run didn't successfully complete
-this step). If `PR created` is already populated from a prior run, leave it alone — the
-original creation date is the authoritative value.
-
-**If the workspace is a git repo:**
-
+**Workspace is a git repo:**
 ```bash
-# Only run the commit+push pair if PR_CREATED_WAS_UNSET=true (the metric was `—`
-# before this Step 9 ran). If it was already set, skip the commit — there is nothing
-# to record on the remote.
 git add ai/<YYYY-MM-DD>-<work-item-id>/
-git commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
+git commit -m "#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
 
-Co-Authored-By: Claude Code <noreply@anthropic.com>
-EOF
-)"
+Co-Authored-By: Claude Code <noreply@anthropic.com>"
 git push origin <feature-branch>
 ```
 
-**If the workspace is NOT a git repo:**
+**Workspace is NOT a git repo:** sync tracker via Read+Write into `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`, then `git -C "<REPO_PATH>" add … commit … push`.
 
-Sync the updated tracker into the repo via Read + Write (same constraint as the create
-path — `bash-write-guard` blocks Bash writes to `ai/` paths):
-
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
-
-Then commit and push:
-
-```bash
-git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
-git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
-
-Co-Authored-By: Claude Code <noreply@anthropic.com>
-EOF
-)"
-git -C "<REPO_PATH>" push origin <feature-branch>
-```
-
-Both pushes in the reuse path are fast-forward (one new commit on top of the remote tip),
-so `--force-with-lease` is not required and the open PR shows a single new commit in its
-timeline — no force-push banner, no orphaned inline comments.
+Fast-forward push — no `--force-with-lease` needed.
 
 ### Step 10 — T1 Metrics Collection
 
