@@ -241,6 +241,7 @@ Pass all three values to downstream commands and agents.
 | `reconcile` | `commands/reconcile.md` | 8 | Post-Merge Reconciliation |
 | `resume` | `commands/resume.md` | R | Workflow State Recovery |
 | `metrics` | `commands/metrics.md` | 9 | Metrics & Observability |
+| `report` | `commands/report.md` | utility | Aggregate metrics report (--since, --format md\|json, --story) |
 | `hotfix` | `commands/hotfix.md` | re-entry | Hotfix / Rollback Re-Entry |
 | `request` | `commands/handle-request.md` | inter-gate | Ad-Hoc Request Handling |
 | `migrate` | `commands/migrate.md` | utility | One-time v1.x → v2.0 workspace migration |
