@@ -185,4 +185,102 @@ test_missing_workflow_dir_exits_2() {
     fi
 }
 
+# ─── Canonical post-v2.1 tracker layout (locks the regression that
+#     left cycle_time, p3/p5 durations, reviewer_rework_rounds, and the
+#     per-task summary blank against real v2.1 trackers) ──────────────────
+
+_setup_canonical_tracker() {
+    cat > "$WF_TRACKER_PATH" <<EOF
+# Tracker — ${WF_STORY_ID}
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T1 | repo | first | ✅ Done | ✅ Approved | abc1234 | test-required: true |
+| T2 | repo | second | ✅ Done | ✅ Approved | def5678 | test-required: true · depends: T1 |
+
+---
+
+## Dependency Graph
+
+\`\`\`mermaid
+flowchart LR
+    T1 --> T2
+\`\`\`
+
+---
+
+## Workflow Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Workflow started** | 2026-05-18 08:00 UTC |
+| **Plan approved** | 2026-05-18 08:30 UTC |
+| **Development started** | 2026-05-18 09:00 UTC |
+| **Initial development completed** | 2026-05-18 11:45 UTC |
+| **Test hardening started** | 2026-05-18 11:50 UTC |
+| **Test hardening completed** | 2026-05-18 12:30 UTC |
+| **PR created** | 2026-05-18 12:35 UTC |
+
+### Task Metrics
+
+| Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At |
+|---------|---------|-----------|---------------|---------------|--------------|----------|
+| T1 | 2026-05-18 09:00 UTC | 2026-05-18 10:30 UTC | 1 | 0 | 2026-05-18 09:15 UTC | 2026-05-18 10:30 UTC |
+| T2 | 2026-05-18 10:35 UTC | 2026-05-18 11:45 UTC | 2 | 1 | 2026-05-18 10:45 UTC | 2026-05-18 11:45 UTC |
+EOF
+}
+
+test_canonical_tracker_populates_aggregates_and_per_task_summary() {
+    _setup_canonical_tracker
+    if ! python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null; then
+        _fail "metrics_collector exited non-zero on canonical tracker"
+        return 1
+    fi
+
+    local csv="$WF_WORKSPACE/ai/_metrics-log.csv"
+    local row
+    row="$(tail -1 "$csv")"
+    # CSV columns (per CSV_COLUMNS in metrics_collector.py):
+    #   schema_version,work_item_id,round,timestamp_utc,
+    #   cycle_time_minutes,p3_duration_minutes,p5_duration_minutes,p7_duration_minutes,
+    #   reviewer_rework_rounds,pr_review_rounds,coverage_pct,defect_escape_count,
+    #   tokens_*, mode
+    #
+    # cycle_time = 12:35 - 08:30 = 4h05 = 245 min
+    # p3_duration = 11:45 - 09:00 = 2h45 = 165 min
+    # p5_duration = 12:30 - 11:50 = 40 min
+    # reviewer_rework_rounds = 1 + 2 = 3
+    local cycle p3 p5 rework
+    cycle=$(echo "$row" | awk -F',' '{print $5}')
+    p3=$(echo "$row" | awk -F',' '{print $6}')
+    p5=$(echo "$row" | awk -F',' '{print $7}')
+    rework=$(echo "$row" | awk -F',' '{print $9}')
+
+    if [ "$cycle" != "245" ]; then
+        _fail "cycle_time_minutes expected 245; got '$cycle' (canonical layout not parsed)"
+        return 1
+    fi
+    if [ "$p3" != "165" ]; then
+        _fail "p3_duration_minutes expected 165; got '$p3'"
+        return 1
+    fi
+    if [ "$p5" != "40" ]; then
+        _fail "p5_duration_minutes expected 40; got '$p5'"
+        return 1
+    fi
+    if [ "$rework" != "3" ]; then
+        _fail "reviewer_rework_rounds expected 3; got '$rework' (Task Metrics not parsed)"
+        return 1
+    fi
+
+    if grep -q '(no task rows parsed)' "$WF_WORKFLOW_DIR/metrics-report.md"; then
+        _fail "Per-Task Summary says '(no task rows parsed)' against canonical tracker"
+        return 1
+    fi
+    if ! grep -qE '^\| T1 \|.*\| 1 \| 2026-05-18 09:00 UTC \|' "$WF_WORKFLOW_DIR/metrics-report.md"; then
+        _fail "Per-Task Summary missing merged T1 row (status + metrics)"
+        return 1
+    fi
+}
+
 run_workflow_tests

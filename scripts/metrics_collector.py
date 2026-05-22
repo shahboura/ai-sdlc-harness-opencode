@@ -124,12 +124,26 @@ _METRIC_LINE = re.compile(r"^([A-Z][A-Za-z0-9 ()/_,-]+?):\s*(.+?)\s*$", re.MULTI
 
 
 def _parse_workflow_metrics(tracker_text: str) -> Dict[str, str]:
-    """Extract `Field: value` lines from the `## Workflow Metrics` section."""
+    """Extract field→value pairs from the `## Workflow Metrics` section.
+
+    Accepts two formats produced by different tracker generations:
+
+    * **Legacy (pre-v2.1)** — plain `Field: value` lines, one per stamp.
+    * **Canonical (v2.1+)** — markdown table rows `| **Field** | value |`
+      under a `| Metric | Value |` header. The bold-asterisk wrapping is
+      the discriminator that distinguishes a metric row from the table
+      header / separator row, and from `### Task Metrics` rows (which
+      have no bold).
+
+    Body scan stops at the next H2 **or** H3 so the `### Task Metrics`
+    sub-section that the canonical layout nests inside `## Workflow Metrics`
+    isn't mis-parsed as workflow stamps.
+    """
     m = re.search(r"^##\s+Workflow Metrics\s*$", tracker_text, flags=re.MULTILINE)
     if not m:
         return {}
     body = tracker_text[m.end():]
-    next_section = re.search(r"^##\s+\S", body, flags=re.MULTILINE)
+    next_section = re.search(r"^#{2,3}\s+\S", body, flags=re.MULTILINE)
     if next_section:
         body = body[: next_section.start()]
     out: Dict[str, str] = {}
@@ -137,43 +151,103 @@ def _parse_workflow_metrics(tracker_text: str) -> Dict[str, str]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        m = re.match(r"^([A-Z][A-Za-z0-9 ()/_-]+?):\s*(.+?)\s*$", line)
-        if m:
-            out[m.group(1).strip()] = m.group(2).strip()
+        # Legacy: plain `Field: value`.
+        legacy = re.match(r"^([A-Z][A-Za-z0-9 ()/_-]+?):\s*(.+?)\s*$", line)
+        if legacy:
+            out[legacy.group(1).strip()] = legacy.group(2).strip()
+            continue
+        # Canonical (v2.1+): `| **Field** | value |` markdown table row.
+        # The bold wrapping excludes the table header `| Metric | Value |`
+        # and the separator `|--------|-------|` automatically.
+        canonical = re.match(r"^\|\s*\*\*([^|*]+?)\*\*\s*\|\s*(.+?)\s*\|", line)
+        if canonical:
+            out[canonical.group(1).strip()] = canonical.group(2).strip()
     return out
 
 
 _TASK_ROW_RE = re.compile(r"^\|\s*(T[\w.-]+)\s*\|", re.MULTILINE)
+_TASK_ID_RE = re.compile(r"^T[\w.-]+$")
 
 
-def _parse_task_rows(tracker_text: str) -> List[Dict[str, str]]:
-    """Parse the `## Tasks` table into a list of {col_name: value} dicts.
+def _parse_pipe_table(body: str) -> List[Dict[str, str]]:
+    """Parse a markdown pipe table whose first cell per row is a task ID.
 
-    The header row defines column names; subsequent `| T<n> | ... |` rows
-    are parsed into per-task dicts.
+    Returns one {column_name: cell_value} dict per data row. The header
+    line is assumed to be the first `|`-prefixed line; the second is the
+    `|---|---|` separator (skipped). Only rows whose first cell matches
+    `T<n>` / `T-TEST-<repo>` are returned — header / decoration noise is
+    filtered out.
     """
-    m = re.search(r"^##\s+Tasks\s*$", tracker_text, flags=re.MULTILINE)
-    if not m:
-        return []
-    body = tracker_text[m.end():]
-    next_section = re.search(r"^##\s+\S", body, flags=re.MULTILINE)
-    if next_section:
-        body = body[: next_section.start()]
     lines = [line for line in body.splitlines() if line.strip().startswith("|")]
     if len(lines) < 2:
         return []
-    # First | row is the header, second is the separator |---|---|.
     header_cells = [c.strip() for c in lines[0].strip().strip("|").split("|")]
-    task_rows: List[Dict[str, str]] = []
+    rows: List[Dict[str, str]] = []
     for line in lines[2:]:
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) != len(header_cells):
             continue
         row = dict(zip(header_cells, cells))
         first_col = next(iter(row.values()), "")
-        if re.match(r"^T[\w.-]+$", first_col):
-            task_rows.append(row)
-    return task_rows
+        if _TASK_ID_RE.match(first_col):
+            rows.append(row)
+    return rows
+
+
+def _slice_section(tracker_text: str, heading_re: str) -> Optional[str]:
+    """Return the body between a heading and the next same-or-higher
+    heading. Returns None if the heading is absent."""
+    m = re.search(heading_re, tracker_text, flags=re.MULTILINE)
+    if not m:
+        return None
+    body = tracker_text[m.end():]
+    next_section = re.search(r"^#{1,3}\s+\S", body, flags=re.MULTILINE)
+    if next_section:
+        body = body[: next_section.start()]
+    return body
+
+
+def _parse_task_metrics_section(tracker_text: str) -> List[Dict[str, str]]:
+    """Parse the canonical `### Task Metrics` sub-section table (v2.1+)."""
+    body = _slice_section(tracker_text, r"^###\s+Task Metrics\s*$")
+    return _parse_pipe_table(body) if body is not None else []
+
+
+def _parse_top_level_task_table(tracker_text: str) -> List[Dict[str, str]]:
+    """Parse the top-level Tasks table that v2.1+ places directly after
+    the H1 (no `## Tasks` heading)."""
+    first_h2 = re.search(r"^##\s+\S", tracker_text, flags=re.MULTILINE)
+    body = tracker_text[: first_h2.start()] if first_h2 else tracker_text
+    return _parse_pipe_table(body)
+
+
+def _parse_task_rows(tracker_text: str) -> List[Dict[str, str]]:
+    """Parse task rows from the tracker, tolerating both layouts.
+
+    * **Canonical (v2.1+)** — top-level Tasks table (no heading) holds
+      `Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes`;
+      `### Task Metrics` under `## Workflow Metrics` holds
+      `Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At`.
+      The two are merged by Task ID so the report has both Status and metrics.
+    * **Legacy (pre-v2.1)** — single `## Tasks` table with metric columns
+      embedded inline. Returned as-is.
+    """
+    canonical_metrics = _parse_task_metrics_section(tracker_text)
+    if canonical_metrics:
+        top_rows = _parse_top_level_task_table(tracker_text)
+        top_by_id = {next(iter(row.values()), ""): row for row in top_rows}
+        for row in canonical_metrics:
+            task_id = next(iter(row.values()), "")
+            top_row = top_by_id.get(task_id)
+            if top_row:
+                # Add Status / Reviewer Verdict / Notes without overwriting
+                # the metric columns the canonical Task Metrics table owns.
+                for col, val in top_row.items():
+                    row.setdefault(col, val)
+        return canonical_metrics
+
+    body = _slice_section(tracker_text, r"^##\s+Tasks\s*$")
+    return _parse_pipe_table(body) if body is not None else []
 
 
 def _minutes_between(start: Optional[dt.datetime], end: Optional[dt.datetime]) -> Optional[int]:
