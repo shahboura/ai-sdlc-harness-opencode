@@ -91,6 +91,10 @@ test_t1_round0_writes_report_csv_and_stamps_tracker() {
 test_t1_then_t2_appends_two_rows() {
     _setup_populated_tracker
     python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    # T2 precondition (post-defensive-gate): an analysis report must exist
+    # in the workflow dir. Simulate the per-cycle artifact written by
+    # `review-response.md`.
+    touch "$WF_WORKFLOW_DIR/pr-comment-analysis-report-1.md"
     python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null
     local csv="$WF_WORKSPACE/ai/_metrics-log.csv"
     local rows
@@ -330,6 +334,97 @@ test_humanised_report_contains_summary_durations_labels_and_timeline() {
     # Missing-value reason: p7 absent → "(no review cycles)".
     if ! grep -qF 'no review cycles' "$report"; then
         _fail "metrics-report.md missing '(no review cycles)' reason for absent p7"
+        return 1
+    fi
+}
+
+# ─── Precondition gate — T1 (--round 0) without `PR created` stamp ──
+#     Locks the regression where premature T1 invocations silently
+#     produced empty-aggregate rows in `_metrics-log.csv`. Live symptom:
+#     `harness-2.0/ai/2026-05-22-US-023/_metrics-log.csv` had a round=0
+#     row written at 10:52 UTC while `PR created` was 11:25 UTC.
+
+test_t1_round0_without_pr_created_exits_2_no_csv() {
+    # Canonical fixture MINUS the `PR created` row — everything else is
+    # the same v2.1 markdown-table layout.
+    cat > "$WF_TRACKER_PATH" <<EOF
+# Tracker — ${WF_STORY_ID}
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T1 | repo | first | ✅ Done | ✅ Approved | abc1234 | test-required: true |
+
+## Workflow Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Plan approved** | 2026-05-18 08:30 UTC |
+| **Development started** | 2026-05-18 09:00 UTC |
+| **Test hardening completed** | 2026-05-18 12:30 UTC |
+
+### Task Metrics
+
+| Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At |
+|---------|---------|-----------|---------------|---------------|--------------|----------|
+| T1 | 2026-05-18 09:00 UTC | 2026-05-18 10:30 UTC | 1 | 0 | 2026-05-18 09:15 UTC | 2026-05-18 10:30 UTC |
+EOF
+    local rc
+    rc=$(python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null 2>&1; echo $?)
+    if [ "$rc" != "2" ]; then
+        _fail "expected exit 2 (precondition unmet — no PR created); got $rc"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKFLOW_DIR/metrics-report.error.md" ]; then
+        _fail "metrics-report.error.md not written on T1 precondition failure"
+        return 1
+    fi
+    if ! grep -qF 'PR created' "$WF_WORKFLOW_DIR/metrics-report.error.md"; then
+        _fail "error.md should name 'PR created' as the missing precondition"
+        return 1
+    fi
+    if [ -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV must NOT be appended on T1 precondition failure"
+        return 1
+    fi
+}
+
+# ─── Precondition gate — T2 (--round 1..N) without analysis report ──
+#     T2 from review-response.md should fire only when a cycle actually
+#     produced a `pr-comment-analysis-report-<n>.md`. Live symptom: a
+#     phantom round=1 row in the user's CSV with no analysis artifact.
+
+test_t2_roundN_without_analysis_report_exits_2_no_csv() {
+    _setup_canonical_tracker
+    # No pr-comment-analysis-report-*.md is written in the canonical
+    # fixture, so T2 should refuse.
+    local rc
+    rc=$(python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null 2>&1; echo $?)
+    if [ "$rc" != "2" ]; then
+        _fail "expected exit 2 (precondition unmet — no analysis report); got $rc"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKFLOW_DIR/metrics-report.error.md" ]; then
+        _fail "metrics-report.error.md not written on T2 precondition failure"
+        return 1
+    fi
+    if ! grep -qF 'pr-comment-analysis-report' "$WF_WORKFLOW_DIR/metrics-report.error.md"; then
+        _fail "error.md should name 'pr-comment-analysis-report-*.md' as the missing artifact"
+        return 1
+    fi
+    if [ -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV must NOT be appended on T2 precondition failure"
+        return 1
+    fi
+
+    # Sanity: dropping a fake analysis report into the dir lets T2 succeed.
+    touch "$WF_WORKFLOW_DIR/pr-comment-analysis-report-1.md"
+    rm -f "$WF_WORKFLOW_DIR/metrics-report.error.md"
+    if ! python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null 2>&1; then
+        _fail "T2 with analysis report present should exit 0; collector still refused"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV should be appended once the precondition holds"
         return 1
     fi
 }

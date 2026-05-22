@@ -194,7 +194,7 @@ Reply APPROVED to create the PR, or CHANGES to abort.
 On `APPROVED` (canonical matcher per `orchestrator-rules.md` → *Human Approval Signal*):
 1. Create PR via the configured git provider (read `provider-config.md`).
 2. Update tracker: T1 → ✅ Done; `Quick-mode completed <ts>` metric stamped.
-3. Trigger P9 metrics: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" "$WORKFLOW_DIR" 0`
+3. Trigger P9 metrics: `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" "$WORKFLOW_DIR" --round 0` (the `--round` flag is required — argparse rejects positional round labels).
 
 ## Step 7b — Clean abort
 

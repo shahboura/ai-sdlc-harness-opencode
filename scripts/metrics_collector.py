@@ -790,6 +790,57 @@ def _write_error(workflow_dir: Path, cause: str) -> Path:
     return err
 
 
+def _check_round_preconditions(
+    round_label: str,
+    workflow_metrics: Dict[str, str],
+    workflow_dir: Path,
+) -> Optional[str]:
+    """Defensive callee-side guard against premature trigger invocations.
+
+    Each round label has an upstream tracker stamp / artifact that must
+    exist before the metrics row is meaningful. The orchestrator-side
+    command files (`create-pr.md` Step 10, `review-response.md` Step 10)
+    already guard at the call site; this gate is the last-line defence
+    so a misfired invocation can't silently produce a row with empty
+    aggregates (the symptom observed in `harness-2.0/ai/2026-05-22-US-023`).
+
+    Returns `None` when the preconditions hold; otherwise an explanation
+    string suitable for the `.error.md` body. Caller emits exit 2 on
+    non-None return.
+
+    Honours CC-05.3 (explicit phase exit signal — phases finish by
+    stamping a metric) and CC-05.4 (phase boundary enforcement at the
+    tool layer): the collector refuses to produce an "I ran" row when
+    the upstream phase did not actually publish its exit signal.
+    """
+    if round_label == "0":
+        # T1 (PR creation) requires the `PR created` stamp; legacy
+        # workflows used `PR-Opened` — accept either.
+        if not (workflow_metrics.get("PR created") or workflow_metrics.get("PR-Opened")):
+            return (
+                "T1 (--round 0) requires the `PR created` stamp in the tracker's "
+                "Workflow Metrics block; none found. Re-run `create-pr.md` Step 9 "
+                "(stamp `PR created` via the Edit tool) before invoking T1 metrics."
+            )
+    elif round_label == "final":
+        # T3 is intentionally lenient — the workflow may complete via
+        # reconcile even with an unusual stamp set; the archived tracker's
+        # existence (already checked at the call site) is sufficient.
+        return None
+    else:
+        # T2 (--round 1..N) requires at least one
+        # `pr-comment-analysis-report-*.md` artifact in the workflow dir
+        # (the per-round P7 output). Without one, T2 has no trigger source.
+        if not list(workflow_dir.glob("pr-comment-analysis-report-*.md")):
+            return (
+                f"T2 (--round {round_label}) requires at least one "
+                f"`pr-comment-analysis-report-*.md` artifact in the workflow dir; "
+                f"none found. T2 should fire only from `review-response.md` Step 10 "
+                f"AFTER a review cycle produced its analysis report."
+            )
+    return None
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="metrics_collector")
     parser.add_argument("workflow_dir", help="Path to ai/<date>-<id>/")
@@ -832,6 +883,20 @@ def main(argv: Optional[List[str]] = None) -> int:
             file=sys.stderr,
         )
         return 1
+
+    # Precondition gate (CC-05.3 / CC-05.4): refuse to record a row when
+    # the upstream phase hasn't published its exit signal. Prevents the
+    # empty-aggregate phantom rows observed in the live HEX workspace at
+    # `harness-2.0/ai/2026-05-22-US-023` where T1 + T2 fired before
+    # `PR created` was stamped and before any analysis report existed.
+    precondition_err = _check_round_preconditions(args.round, workflow_metrics, workflow_dir)
+    if precondition_err:
+        path = _write_error(workflow_dir, precondition_err)
+        print(
+            f"metrics_collector: precondition unmet — {precondition_err}; details at {path}",
+            file=sys.stderr,
+        )
+        return 2
 
     aggregates = _compute_aggregates(workflow_metrics, tasks, workflow_dir, mode=mode)
     generated_at = _utc_now()

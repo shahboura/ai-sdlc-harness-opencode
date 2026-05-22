@@ -293,8 +293,9 @@ related PRs in other repos:
 
 ### Step 9 — Record Final Metric
 
-After all PRs are created (or reused), set `PR created` to `date -u +"%Y-%m-%d %H:%M UTC"`
-in the tracker file. Then update the remote with the new tracker state.
+After all PRs are created (or reused), stamp `PR created` in the tracker — this is a hard precondition for Step 10's T1 metrics. Do NOT advance until the stamp is in place.
+
+**Sequence:** capture `PR_CREATED_TS=$(date -u +"%Y-%m-%d %H:%M UTC")`; use the **Edit** tool to add or update `| **PR created** | <PR_CREATED_TS> |` in the `## Workflow Metrics` block at `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (canonical row format per [`tracker-field-schema.md`](../../../agents/shared/tracker-field-schema.md)); re-read the tracker to verify; then update the remote per the Create-path / Reuse-path bash blocks below.
 
 **Read pr-creator's `Reuse:` flag** for each repo from its output contract (per
 `skills/pr-creator/SKILL.md` → Step 0). The flag determines which of the two paths
@@ -363,15 +364,19 @@ no agent, no LLM hop — that reads the just-stamped tracker, computes the six
 required workflow aggregates, writes a per-workflow `metrics-report.md` and
 appends one row to the workspace-level `ai/_metrics-log.csv`.
 
+**Precondition guard (NON-NEGOTIABLE):** Step 9's `PR created` stamp must exist before this runs — otherwise the row records empty `cycle_time_minutes`. The collector also enforces this defensively (exit 2 + `.error.md`); the call-site pre-check is for clarity:
+
 ```bash
+grep -qE '\*\*PR created\*\*|^PR created:' \
+  "ai/<YYYY-MM-DD>-<work-item-id>/tracker.md" \
+  || { echo "Step 10 skipped: PR created not stamped (re-run Step 9)" >&2; exit 0; }
+
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
     "ai/<YYYY-MM-DD>-<work-item-id>" \
     --round 0
 ```
 
-Exit semantics: `0` success, `1` validation failure (an `.error.md` sibling
-is written; the CSV is NOT appended), `2` precondition unmet (workflow dir
-or tracker missing).
+Exit semantics: `0` success, `1` validation failure (`.error.md` written, CSV not appended), `2` precondition unmet (PR created absent / workflow dir / tracker missing).
 
 On exit `1`/`2` the orchestrator surfaces the `.error.md` content verbatim
 to the human but **does not** abort PR creation — the PR is already on the

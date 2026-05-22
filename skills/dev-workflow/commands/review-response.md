@@ -241,13 +241,28 @@ session memory — so this step is safe to run even after a session interruption
 
 ### Step 10 — T2 Metrics Collection
 
+**Precondition guard (NON-NEGOTIABLE):** T2 is only meaningful when this
+cycle actually produced a comment-analysis report. Verify before invoking:
+
+```bash
+ls "ai/<YYYY-MM-DD>-<work-item-id>"/pr-comment-analysis-report-*.md >/dev/null 2>&1 \
+  || { echo "Step 10 skipped: no pr-comment-analysis-report-*.md in workflow dir (T2 has no trigger source)" >&2; exit 0; }
+```
+
+If no analysis report exists in the workflow dir, **skip the metrics
+invocation** — firing T2 here would record a phantom row in
+`_metrics-log.csv` with empty `p7_duration_minutes` (the symptom this
+guard exists to prevent). The Step 2 early-exit at "no unresolved
+comments" already covers most paths; this Step 10 guard is the
+defence-in-depth check.
+
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
     "ai/<YYYY-MM-DD>-<work-item-id>" \
     --round <n>
 ```
 
-Round = count of distinct `pr-comment-analysis-report-*.md` files in the workflow dir after this cycle's analysis was written. Aggregator computes `p7_duration_minutes` (`PR created` → `PR review response completed`) and `pr_review_rounds`. Exit: `0` success, `1` validation failure (surface `.error.md`), `2` precondition unmet. Non-zero does not abort P7 — metrics are non-blocking.
+Round = count of distinct `pr-comment-analysis-report-*.md` files in the workflow dir after this cycle's analysis was written. Aggregator computes `p7_duration_minutes` (`PR created` → `PR review response completed`) and `pr_review_rounds`. Exit: `0` success, `1` validation failure (surface `.error.md`), `2` precondition unmet (including "no analysis report"). Non-zero does not abort P7 — metrics are non-blocking.
 
 ---
 
