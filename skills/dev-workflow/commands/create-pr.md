@@ -219,12 +219,14 @@ First, determine whether the workspace `ai/<YYYY-MM-DD>-<work-item-id>/` directo
 git -C ai/<YYYY-MM-DD>-<work-item-id>/ rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**Case A — workspace IS a git repo** (exits 0 — single-repo stories where the workspace itself is the target repository; the plan, tracker, and code all live in the same git tree):
+**Case A — workspace IS a git repo** (exits 0 — single-repo stories where the workspace itself is the target repository; the plan, tracker, test outline, and code all live in the same git tree):
+
+The directory-level `git add` below picks up the tracker and the test outline together — the tracker stayed uncommitted from Phase 2 per orchestrator rule #8, and the test outline stayed uncommitted alongside it (preflight Step 3 only committed `plan.md`).
 
 ```bash
 git add ai/<YYYY-MM-DD>-<work-item-id>/
 git commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: add task tracker with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker and test outline with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
@@ -233,15 +235,16 @@ EOF
 
 **Case B — workspace is NOT a git repo** (exits non-zero — the multi-repo design case, where the workspace is a standalone directory holding `ai/` artifacts and the affected repos are cloned alongside it; this is the design's headline case and what every multi-repo story uses):
 
-For each affected repo, copy the tracker and plan into that repo's `ai/` directories, then commit from the repo.
+For each affected repo, copy the tracker, plan, and test outline into that repo's `ai/` directories, then commit from the repo. All three are sibling P2 artifacts (per [workflow-paths](../context/workflow-paths.md)) and must land together so the PR commit is self-contained.
 
 **Do NOT use `cp`.** The `bash-write-guard` hook blocks shell mutations to any path
 containing `/ai/` by design — `ai/` is owned by Read/Write tool calls, never by
 shell-driven mutations. Use the **Read** tool to read each workspace file and the **Write**
 tool to write it to the repo path:
 
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)    → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace)      → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)         → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md`
 
 Then commit from the repo:
 
@@ -249,14 +252,14 @@ Then commit from the repo:
 # For each affected repo at <REPO_PATH>:
 git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
 git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: add task tracker and plan with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker, plan, and test outline with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
 )"
 ```
 
-The tracker and plan now travel with the feature branch. All Step 9 amend operations target the same repo commit.
+The tracker, plan, and test outline now travel with the feature branch. All Step 9 amend operations target the same repo commit.
 
 ### Step 7 — Create PRs (One Per Repo)
 
