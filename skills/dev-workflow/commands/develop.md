@@ -133,8 +133,8 @@ Launch **@ai-sdlc-tester** with `run_in_background: true`, `name: "tester-<repo-
    [Include WORKTREE_CTX if WORKTREE_FAILED=false, else REPO_CTX with `worktree_failed: true`]
    [Include PATTERN_HINTS_CTX from the plan's Test Pattern References section if present]
 
-   TEST OUTLINE FOR T<n> (from approved plan):
-   <Copy the Test Outline section for this task exactly as written in the plan>
+   TEST OUTLINE FOR T<n> (from approved test-outline.md):
+   <Copy the `## T<n>: …` block for this task exactly as written in `ai/<date>-<story-id>/test-outline.md` — on legacy workspaces, fall back to the `## Test Outline` section of `plan.md`>
 
    Instructions:
    1. Implement EXACTLY the tests in the Test Outline — work in the provided worktree
@@ -228,13 +228,14 @@ Parse the agent's status block per [agent-response](../context/agent-response.md
 
    <IF test-required: true — include TDD CONTEXT:>
    - Tester commit: <test_commit>  Developer commit: <impl_commit>
-   - Test Outline for T<n>: <copy from plan>
+   - Test Outline for T<n>: <copy the `## T<n>: …` block from `ai/<date>-<story-id>/test-outline.md` — legacy fallback: the `## Test Outline` section of `plan.md`>
    Worktree contains TWO commits (Tester's red tests, then Developer's green impl) — review as one change.
 
    Two-phase review:
    1. SPEC COMPLIANCE (Phase A): Read plan at `ai/*-$ARGUMENTS/plan.md` (or legacy `ai/plans/*$ARGUMENTS*`),
       verify T<n> requirements. If test-required: also verify test files unchanged by Developer,
-      tests match approved outline, all tests pass.
+      tests match the approved outline at `ai/*-$ARGUMENTS/test-outline.md` (legacy fallback: the
+      `## Test Outline` section of `plan.md`), all tests pass.
    2. CODE QUALITY (Phase B): if spec passes — run build, evaluate conventions and PR checklist.
 
    Label comments per `agents/reviewer/index.md`: [S<n>] spec failure, [R<n>] production quality,

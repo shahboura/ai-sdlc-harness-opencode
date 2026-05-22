@@ -241,19 +241,19 @@ Invoke `@ai-sdlc-planner` with `MODE: ad-hoc-tasks` (foreground). Behaviour docu
 ```
 @ai-sdlc-planner Append ad-hoc tasks to the existing tracker for Story $ARGUMENTS.
 MODE: ad-hoc-tasks
-CONTEXT: Tracker path, Plan path, Story ID, Batch <N> (count of existing `## Ad-hoc Tasks (Batch …)` headings + 1), Source, Timestamp
+CONTEXT: Tracker path, Plan path, Test-outline path, Story ID, Batch <N> (count of existing `## Ad-hoc Tasks (Batch …)` headings + 1), Source, Timestamp
 
 CONFIRMED IN-SCOPE REQUESTS:
 [AHR-<n>] Repo | Classification | Reviewer reasoning | Proposed task | Affected files
 [AHR-<m>] ...
 
 Instructions:
-1. Read tracker and plan. Find highest Task ID across all sections.
-2. Append one task row per AHR under `## Ad-hoc Tasks (Batch <N>)`.
-3. Add Test Outline section to plan (`## Test Outline — Ad-Hoc Batch <N>`, Subject_Scenario_Outcome).
+1. Read tracker, plan, and test-outline. Find highest Task ID across all sections.
+2. Append one task row per AHR under `## Ad-hoc Tasks (Batch <N>)` in the tracker.
+3. Append a `## Test Outline — Ad-Hoc Batch <N>` section to **`test-outline.md`** (NOT plan.md), with one `## T<n>: …` block per new task (Subject_Scenario_Outcome convention). Keep the file in lock-step with the new tracker rows.
 4. Regenerate `## Dependency Graph` (new tasks → T-TEST-<RepoName>).
 5. Record `Ad-hoc requests started` in Workflow Metrics (first batch only).
-6. Save and verify tracker and plan.
+6. Save and verify tracker and test-outline.
 ```
 
 On `PARTIAL`/`FAILED` follow `orchestrator-rules.md`. On `SUCCESS`, record `Ad-hoc requests started` if not already set.

@@ -115,6 +115,7 @@ MODE: pr-response-tasks
 CONTEXT:
 - Tracker path: <workflow_dir>/tracker.md
 - Plan path: <workflow_dir>/plan.md
+- Test-outline path: <workflow_dir>/test-outline.md
 - Story ID: $ARGUMENTS
 - Round: <N>
   (Round = count of existing `## Amendments (PR Review Round …)` headings + 1)
@@ -124,13 +125,13 @@ ACCEPTED PR COMMENTS TO ADDRESS:
 [PC-<m>] ...
 
 Instructions:
-1. Read tracker and plan. Find highest Task ID.
-2. For EACH accepted PC comment, add one task row under `## Amendments (PR Review Round <N>)`:
+1. Read tracker, plan, and test-outline. Find highest Task ID.
+2. For EACH accepted PC comment, add one task row under `## Amendments (PR Review Round <N>)` in the tracker:
    Notes: PR-comment: [PC-<n>] thread_id=<id> | test-required: true
-3. Add Test Outline section for each task to the plan (Subject_Scenario_Outcome convention).
+3. Append a `## Test Outline — PR Review Round <N>` section to **`test-outline.md`** (NOT plan.md), with one `## T<n>: …` block per new task (Subject_Scenario_Outcome convention). Keep the file in lock-step with the new tracker rows.
 4. Regenerate `## Dependency Graph` (new tasks as root nodes → T-TEST-<RepoName>).
 5. Add `PR review response started | <timestamp>` to Workflow Metrics.
-6. Save and verify tracker and plan.
+6. Save and verify tracker and test-outline.
 ```
 
 On `Outcome: PARTIAL`/`FAILED` follow `orchestrator-rules.md` error handling. On `SUCCESS`, record `PR review response started`.

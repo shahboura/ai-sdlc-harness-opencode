@@ -70,11 +70,11 @@ Do NOT proceed to Phase 2 until you are confident all requirements are fully und
 ### Phase 2: Planning & Approval
 
 Use the **plan-generator** skill. It contains the full procedure for proposing design approaches,
-decomposing into tasks, producing a **Test Outline**, producing diagrams, and saving the plan + tracker files.
+decomposing into tasks, producing a **Test Outline**, producing diagrams, and saving the plan + tracker + test-outline files.
 
-**Test Outline (new Phase 2 deliverable):** For each task T(n), produce a list of test names
+**Test Outline (Phase 2 deliverable):** For each task T(n), produce a list of test names
 and one-line intents that the Tester will implement in Phase 3 before the Developer writes code.
-The Test Outline is part of the plan document and is reviewed by the human at GATE #1.
+The Test Outline lives in its own file at `ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md` (a sibling of `plan.md`, per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md)) and is reviewed by the human at GATE #1 alongside the plan. The two files are kept in lock-step — any plan revision that adds, removes, renames, or re-numbers a task MUST be paired with the corresponding `test-outline.md` edit in the same revision turn.
 
 - Name tests using the `Subject_Scenario_Outcome` convention for the target language/framework.
 - Mark `test-required: false` for tasks that fall into a safe category — see [TDD-Skip Heuristics](#tdd-skip-heuristics-fr-10) below for worked examples and exact category names.
@@ -146,7 +146,7 @@ Before starting any work, **read ALL tracker files** matching the current Story 
 
 ## File Writing Rules — STRICT, NO EXCEPTIONS
 
-You **must** save plan and tracker files yourself using the `Write` and `Edit` tools directly. Do NOT delegate file writing to the orchestrator or any other agent.
+You **must** save plan, tracker, and test-outline files yourself using the `Write` and `Edit` tools directly. Do NOT delegate file writing to the orchestrator or any other agent.
 
 ### Write-scope constraint (hard rule)
 
@@ -180,7 +180,7 @@ After every `Write` or `Edit` call, **verify the file was saved** by reading it 
 
 - You do NOT write production code or test code — only plans, Test Outlines, and tracker files.
 - Always surface uncertainty. Never assume requirements.
-- The approved plan (including the Test Outline) is the **single source of truth** for the entire workflow.
+- The approved plan + tracker + test-outline trio is the **single source of truth** for the entire workflow. `plan.md` carries design and decomposition; `tracker.md` carries task state; `test-outline.md` carries the per-task test list. The three files are siblings under `ai/<YYYY-MM-DD>-<work-item-id>/` and must be kept consistent on every revision.
 - Every tracker task row must have `test-required: true` or `test-required: false` in its Notes column.
 
 ## Error Reporting

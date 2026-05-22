@@ -123,19 +123,32 @@ Produce a Mermaid `sequenceDiagram` (with `autonumber`) showing end-to-end actor
 
 For each task T(n), produce a Test Outline listing unit/integration tests the Tester will implement in Phase 3.
 
-**Format per task:**
-```markdown
-## Test Outline
+**Save target — standalone file, not a plan.md section.** Per [workflow-paths](../dev-workflow/context/workflow-paths.md), the Test Outline lives at `$WORKFLOW_DIR/test-outline.md` — a sibling of `plan.md` and `tracker.md`. Do NOT embed the per-task outline blocks inside `plan.md`; `plan.md` carries only the pointer stub declared in Step 6.
 
-### T1: <task title>
+**File layout** — the whole file, written as one Write call:
+```markdown
+# Test Outline — <Story Title> (<Story-ID>)
+
+> Authoritative reference: [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md)
+> Companion plan: `plan.md` (sibling)
+
+## T1: <task title>
 `test-required: true`
 - `MethodName_Scenario_ExpectedResult` — one-line description of what behaviour it validates and which acceptance criterion it covers (e.g. AC-2)
 
-### T2: <task title>
+## T2: <task title>
 `test-required: false` — <one-line justification, e.g. "dependency bump covered by existing suite" or "pure config change with no branching logic">
+
+🤖 Generated with [Claude Code](https://claude.ai/claude-code)
 ```
 
 **Rules:** use `Subject_Scenario_Outcome` naming convention; include happy-path, error/edge-case, and security/boundary tests per AC; mark `test-required: false` for pure-config/scaffolding/rename tasks; present at GATE #1 for approval.
+
+**Sync rule (NON-NEGOTIABLE):** `test-outline.md` and `tracker.md` are the same contract viewed from two angles — the tracker enumerates tasks, the outline enumerates the tests that will validate each task. They must stay in lock-step:
+
+- **Every** `test-required: true` task row in the tracker must have a matching `## T<n>: …` block in `test-outline.md` with ≥ 1 test name.
+- **Every** `test-required: false` task row must have a matching `## T<n>: …` block recording the justification (a single-line `test-required: false — <reason>`).
+- Whenever the tracker gains, loses, renames, or re-numbers a task — at GATE #1 revisions, in `pr-response-tasks` mode, in `ad-hoc-tasks` mode, in `plan-amendment` mode — `test-outline.md` MUST be updated in the same Write/Edit pass. Never write a tracker change without the matching outline change.
 
 ### 5b. Test Pattern References (Bounded Pattern-Hint Discovery)
 
@@ -174,7 +187,7 @@ For every task with `test-required: true`, produce a short list of 0–2 existin
 
 The approved Patterns list per task is inlined verbatim into the Tester's prompt as a `TEST PATTERN HINTS` block (see `prompt-templates.md` → `PATTERN_HINTS_CTX`).
 
-### 6. Save Plan Document
+### 6. Save Plan Document + Test Outline
 
 **Before saving**, run:
 ```bash
@@ -184,15 +197,22 @@ WORKFLOW_DIR="$WORKSPACE_ROOT/ai/${TODAY}-${STORY_ID}"
 mkdir -p "$WORKFLOW_DIR"
 ```
 
-Save to: `$WORKFLOW_DIR/plan.md`  (i.e. `ai/<YYYY-MM-DD>-<safe-id>/plan.md`)
+**Two files, two Write calls:**
+
+1. `$WORKFLOW_DIR/test-outline.md` — the file produced in Step 5 (standalone, not a plan section).
+2. `$WORKFLOW_DIR/plan.md` — the design document below.
 
 The plan document must include:
 1. Story metadata (ID, title, sprint)
 2. Requirements summary
 3. **Affected repos** (list with justification)
-4. **Cross-repo contracts** (if multi-repo: full contract definitions)
+4. **Cross-repo contracts** (if multi-repo: stub section `## Cross-Repo Contracts → see contracts.md`)
 5. Selected design approach
-6. **Test Outline** (per-task test names + intent; `test-required` flag)
+6. **Test Outline** (stub-only): a section reading
+   ```markdown
+   ## Test Outline → see test-outline.md
+   ```
+   followed by a one-line note `> The per-task test list lives in [`test-outline.md`](test-outline.md) (sibling file). Approve both at GATE #1.` Do NOT inline per-task test blocks here — they live in `test-outline.md` only (CC-04.5 drift control).
 7. **Test Pattern References** (per-task list of 0–2 existing test files; produced by Step 5b. The human reviews these at GATE #1 and may edit them before approval.)
 8. Task breakdown table (with Repo column)
 9. Class diagram
@@ -238,13 +258,15 @@ After the task table, write `## Dependency Graph`, `## Repo Status`, and `## Wor
 
 ### 8. Present for Approval
 
-Display the full plan — including the Test Outline and the Test Pattern References — to the human user. Call out the Pattern References explicitly:
+Display **both** the plan and the Test Outline to the human user — they are sibling files that approve together. Call out the Pattern References explicitly:
 
-> **🚦 GATE: Please review this plan, the Test Outline, and the Test Pattern References (per-task list of existing test files the Tester will consult) and respond with APPROVED to proceed, or describe the changes you'd like.**
+> **🚦 GATE: Please review this plan (plan.md), the Test Outline (test-outline.md), and the Test Pattern References (per-task list of existing test files the Tester will consult) and respond with APPROVED to proceed, or describe the changes you'd like.**
 >
 > *Patterns are filename-glob suggestions. If any look irrelevant, strike them — empty pattern lists are fine; the Tester will fall back to framework defaults.*
 
 Do NOT proceed until receiving approval.
+
+**On revision requests:** if the human asks for changes that alter the tracker (add/remove/rename/re-number a task, flip `test-required`, change AC mapping), re-run Step 5 (re-produce the Test Outline) **and** re-run Step 6 (re-write both `test-outline.md` and the plan) in the same revision turn. Never leave `test-outline.md` reflecting the pre-revision tracker — the Sync rule from Step 5 applies to every revision pass.
 
 ## Phase 7 Amendment Mode (`MODE: pr-response-tasks`)
 
@@ -252,7 +274,11 @@ When the orchestrator invokes this skill with `MODE: pr-response-tasks` (from `s
 
 **Skip**: Steps 0a, 0, 1 (plan/tracker already exist), Step 7 fresh-file creation, Step 8 (human gated at GATE #4 — amendment write-back is silent).
 
-**Repeat**: Step 1b (verify Repo values), Step 5 (Test Outline under `## Test Outline — PR Review Round N`), Step 5b (Test Pattern References for amendment tasks), Step 6 Dependency Graph regeneration (amendment tasks appear as root nodes with implicit T-TEST edge).
+**Repeat**:
+- Step 1b (verify Repo values).
+- Step 5 — append a new `## Test Outline — PR Review Round N` section to **`test-outline.md`** (NOT `plan.md`). The new section sits below any existing per-task or per-round blocks; do not edit prior sections.
+- Step 5b (Test Pattern References for amendment tasks).
+- Step 6 Dependency Graph regeneration (amendment tasks appear as root nodes with implicit T-TEST edge).
 
 ### Amendment row template
 
@@ -278,7 +304,11 @@ When the orchestrator invokes this skill with `MODE: ad-hoc-tasks` (from `skills
 
 **Skip**: Steps 0a, 0, 1, Step 7 fresh-file creation, Step 8 (human gated at GATE #5 — append is silent).
 
-**Repeat**: Step 1b (verify Repo values), Step 5 (Test Outline under `## Test Outline — Ad-Hoc Batch <N>`), Step 5b (Test Pattern References), Step 6 Dependency Graph regeneration.
+**Repeat**:
+- Step 1b (verify Repo values).
+- Step 5 — append a new `## Test Outline — Ad-Hoc Batch <N>` section to **`test-outline.md`** (NOT `plan.md`). The new section sits below any existing per-task or per-round blocks; do not edit prior sections.
+- Step 5b (Test Pattern References).
+- Step 6 Dependency Graph regeneration.
 
 ### Ad-hoc row template
 
@@ -331,7 +361,7 @@ Append a new `## Plan Amendment — Ad-Hoc Round <N>` section below the existing
 - Dependencies are **intra-repo only**. Cross-repo boundaries are resolved via contracts defined in step 2b.
 - Every task must have a **Repo** column value matching a repo name from `repos-metadata.md`.
 - Every task must have `test-required: true` or `test-required: false` in its Notes column.
-- Every `test-required: true` task must have a corresponding Test Outline entry with at least one test name.
+- Every `test-required: true` task must have a corresponding Test Outline entry in `test-outline.md` (not `plan.md`) with at least one test name. Every `test-required: false` task must have a one-line justification entry in `test-outline.md`. The two files are kept in lock-step per the Sync rule in Step 5.
 - Include one `T-TEST-<RepoName>` row per affected repo. These track Phase 5 test hardening through the same Pending → In Progress → In Review → Done lifecycle as dev tasks.
 - The **Repo Status** section must be populated from `repos-paths.md` and `repos-metadata.md`.
 - The plan is the **contract** — all agents will reference it as the source of truth.

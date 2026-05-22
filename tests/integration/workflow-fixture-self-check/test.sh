@@ -110,14 +110,38 @@ test_wf_write_plan_produces_canonical_sections() {
     wf_write_plan
     local p="$WF_PLAN_PATH"
     local section
-    for section in 'Story Metadata' 'Affected Repos' 'Test Outline' 'Class Diagram' 'Flow Chart' 'Sequence Diagram' 'Risk/Assumptions'; do
+    # 'Test Outline' lives in the sibling test-outline.md; plan.md carries
+    # only the pointer stub asserted below.
+    for section in 'Story Metadata' 'Affected Repos' 'Class Diagram' 'Flow Chart' 'Sequence Diagram' 'Risk/Assumptions'; do
         if ! grep -qE "^## ${section}" "$p"; then
             _fail "plan missing ## ${section} section"
             return 1
         fi
     done
+    if ! grep -qE '^## Test Outline → see test-outline\.md' "$p"; then
+        _fail "plan missing '## Test Outline → see test-outline.md' pointer stub"
+        return 1
+    fi
     if ! grep -qF 'claude.ai/claude-code' "$p"; then
         _fail "plan missing attribution footer"
+        return 1
+    fi
+}
+
+test_wf_write_test_outline_produces_sibling_file() {
+    wf_write_test_outline
+    wf_assert_file_exists "ai/${WF_TODAY}-${WF_STORY_ID}/test-outline.md"
+    local f="$WF_TEST_OUTLINE_PATH"
+    if ! grep -qE "^# Test Outline — ${WF_STORY_ID}$" "$f"; then
+        _fail "test-outline.md missing canonical H1 header"
+        return 1
+    fi
+    if ! grep -qE '^## T1:' "$f"; then
+        _fail "test-outline.md missing ## T1 task block"
+        return 1
+    fi
+    if ! grep -qF 'claude.ai/claude-code' "$f"; then
+        _fail "test-outline.md missing attribution footer"
         return 1
     fi
 }
