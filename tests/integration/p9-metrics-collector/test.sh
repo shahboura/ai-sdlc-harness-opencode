@@ -283,4 +283,55 @@ test_canonical_tracker_populates_aggregates_and_per_task_summary() {
     fi
 }
 
+# ─── Humanised metrics-report.md rendering (top-line summary, durations,
+#     human labels, phase timeline). Asserts only the report's display
+#     surface — the CSV / tracker stamp formats are unchanged contracts
+#     and remain covered by their own assertions above. ────────────────
+
+test_humanised_report_contains_summary_durations_labels_and_timeline() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    # TL;DR summary blockquote — cycle time 4h 05m (08:30 → 12:35).
+    if ! grep -qE '^> \*\*Summary\*\*: Story completed in 4h 05m' "$report"; then
+        _fail "metrics-report.md missing TL;DR '> **Summary**: Story completed in 4h 05m' line"
+        return 1
+    fi
+    # Humanised duration in the Aggregates table.
+    if ! grep -qE '\| 4h 05m \|' "$report"; then
+        _fail "metrics-report.md Aggregates missing humanised cycle time '4h 05m'"
+        return 1
+    fi
+    # Sub-hour duration formatting (p5 = 40m).
+    if ! grep -qE '\| 40m \|' "$report"; then
+        _fail "metrics-report.md Aggregates missing '40m' sub-hour duration"
+        return 1
+    fi
+    # Human label — P3 phase name.
+    if ! grep -qF 'P3 — Development' "$report"; then
+        _fail "metrics-report.md missing humanised label 'P3 — Development'"
+        return 1
+    fi
+    # Phase Timeline section + canonical header.
+    if ! grep -qE '^## Phase Timeline' "$report"; then
+        _fail "metrics-report.md missing '## Phase Timeline' section"
+        return 1
+    fi
+    if ! grep -qE '^\| Stamp \| UTC time \| Δ from start \|' "$report"; then
+        _fail "metrics-report.md Phase Timeline missing canonical header row"
+        return 1
+    fi
+    # Earliest stamp (Workflow started) has Δ = 0m.
+    if ! grep -qE '^\| Workflow started \|.*\| 0m \|' "$report"; then
+        _fail "metrics-report.md Phase Timeline missing 'Workflow started ... 0m' anchor row"
+        return 1
+    fi
+    # Missing-value reason: p7 absent → "(no review cycles)".
+    if ! grep -qF 'no review cycles' "$report"; then
+        _fail "metrics-report.md missing '(no review cycles)' reason for absent p7"
+        return 1
+    fi
+}
+
 run_workflow_tests

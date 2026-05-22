@@ -97,6 +97,44 @@ _V1_0_COLUMNS = [
 # Sentinel used when token data is unavailable (ADR-002 null-safe contract).
 _TOKEN_UNAVAILABLE = ""
 
+# Human-friendly labels for the Aggregates + Token Usage tables in
+# `metrics-report.md`. CSV column names (raw snake_case keys) are NEVER
+# rewritten — the CSV is a machine-readable contract; only the markdown
+# report uses these display labels.
+_HUMAN_LABELS: Dict[str, str] = {
+    "cycle_time_minutes": "Cycle time (plan approved → PR created)",
+    "p3_duration_minutes": "P3 — Development",
+    "p5_duration_minutes": "P5 — Test hardening",
+    "p7_duration_minutes": "P7 — Review response",
+    "reviewer_rework_rounds": "Reviewer rework rounds",
+    "pr_review_rounds": "PR review cycles",
+    "coverage_pct": "Coverage (post-hardening)",
+    "defect_escape_count": "Defects escaped to PR review",
+    "tokens_input": "Tokens — input",
+    "tokens_output": "Tokens — output",
+    "tokens_cache_read": "Tokens — cache read",
+    "tokens_cache_write": "Tokens — cache write",
+    "mode": "Mode",
+}
+
+# Aggregate keys whose value is a minute-count and should render as `Xh YYm`
+# (or `YYm` when < 60) in the markdown report.
+_DURATION_KEYS = {
+    "cycle_time_minutes",
+    "p3_duration_minutes",
+    "p5_duration_minutes",
+    "p7_duration_minutes",
+}
+
+# Aggregate keys whose value is a token integer and should render with
+# thousands separators (e.g. 93028671 → "93,028,671") in the markdown report.
+_TOKEN_KEYS = {
+    "tokens_input",
+    "tokens_output",
+    "tokens_cache_read",
+    "tokens_cache_write",
+}
+
 
 def _parse_timestamp(s: str) -> Optional[dt.datetime]:
     s = s.strip()
@@ -469,6 +507,157 @@ def _compute_aggregates(
     }
 
 
+def _format_duration(minutes: object) -> Optional[str]:
+    """Convert a minute count into `Xh YYm` (or `YYm` when < 60).
+
+    Returns None for None / empty / non-numeric — callers render the
+    missing-value sentinel themselves so they can also attach a reason.
+    """
+    if minutes is None or minutes == "":
+        return None
+    try:
+        m = int(minutes)
+    except (TypeError, ValueError):
+        return None
+    if m < 60:
+        return f"{m}m"
+    h, mm = divmod(m, 60)
+    return f"{h}h {mm:02d}m"
+
+
+def _format_tokens(count: object) -> Optional[str]:
+    """Format a token integer with thousands separators. None on missing."""
+    if count is None or count == "":
+        return None
+    try:
+        return f"{int(count):,}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _human_label(key: str) -> str:
+    """Humanised label for an aggregate key. Falls back to spaces-from-snake_case."""
+    return _HUMAN_LABELS.get(key, key.replace("_", " "))
+
+
+def _missing_reason(
+    key: str,
+    workflow_metrics: Dict[str, str],
+    workflow_dir: Path,
+) -> Optional[str]:
+    """Why is the aggregate value missing? Returns None when unknown
+    (caller falls back to a plain `—`)."""
+    if key == "cycle_time_minutes":
+        if not (workflow_metrics.get("PR created") or workflow_metrics.get("PR-Opened")):
+            return "PR not yet created"
+    elif key == "p7_duration_minutes":
+        if not list(workflow_dir.glob("pr-comment-analysis-report-*.md")):
+            return "no review cycles"
+    elif key == "coverage_pct":
+        if not (workflow_metrics.get("Coverage") or workflow_metrics.get("Final coverage")):
+            return "no coverage report"
+    return None
+
+
+def _format_aggregate_value(
+    key: str,
+    value: object,
+    workflow_metrics: Dict[str, str],
+    workflow_dir: Path,
+) -> str:
+    """Render an aggregate value for the markdown Aggregates table.
+
+    - Duration keys → `Xh YYm` / `YYm`.
+    - Token keys → thousands-separated integer.
+    - Empty / None → `—`, suffixed with `(reason)` when one is known.
+    - Everything else → str(value).
+    """
+    if value is None or value == "":
+        reason = _missing_reason(key, workflow_metrics, workflow_dir)
+        return f"— ({reason})" if reason else "—"
+    if key in _DURATION_KEYS:
+        return _format_duration(value) or "—"
+    if key in _TOKEN_KEYS:
+        return _format_tokens(value) or "—"
+    return str(value)
+
+
+def _render_summary(aggregates: Dict[str, object], tasks: List[Dict[str, str]]) -> Optional[str]:
+    """Build the top-line `> **Summary**:` blockquote contents.
+
+    Pieces with no data are skipped rather than rendering `n/a`. Returns
+    None when nothing is worth saying.
+    """
+    cycle = _format_duration(aggregates.get("cycle_time_minutes"))
+    pieces: List[str] = []
+
+    if tasks:
+        n = len(tasks)
+        mode = aggregates.get("mode", "full")
+        suffix = "task" if n == 1 else "tasks"
+        if cycle:
+            pieces.append(f"{n} {suffix} ({mode} mode)")
+        else:
+            pieces.append(f"{n} {suffix} completed so far")
+
+    rework = aggregates.get("reviewer_rework_rounds")
+    if rework not in (None, ""):
+        try:
+            r = int(rework)
+            pieces.append(f"{r} reviewer round" + ("s" if r != 1 else ""))
+        except (TypeError, ValueError):
+            pass
+
+    defects = aggregates.get("defect_escape_count")
+    if defects not in (None, ""):
+        try:
+            d = int(defects)
+            pieces.append(f"{d} defect" + ("s" if d != 1 else "") + " escaped")
+        except (TypeError, ValueError):
+            pass
+
+    if not pieces and not cycle:
+        return None
+
+    body = " · ".join(pieces)
+    if cycle:
+        return f"Story completed in {cycle}" + (f" · {body}" if body else "")
+    return f"In progress — {body}" if body else "In progress"
+
+
+def _render_timeline(workflow_metrics: Dict[str, str]) -> List[str]:
+    """Render workflow stamps as a chronological phase timeline table.
+
+    Drops `Metrics collected (N):` rows (meta, not phase events) and any
+    stamp whose value isn't a parseable timestamp. Δ is computed from the
+    earliest parseable stamp present. Returns the markdown lines (no
+    trailing blank).
+    """
+    stamps: List[Tuple[dt.datetime, str, str]] = []
+    for name, value in workflow_metrics.items():
+        if name.lower().startswith("metrics collected"):
+            continue
+        ts = _parse_timestamp(value)
+        if ts is None:
+            continue
+        stamps.append((ts, name, value))
+
+    if not stamps:
+        return ["(no phase stamps recorded)"]
+
+    stamps.sort(key=lambda t: t[0])
+    start = stamps[0][0]
+    lines = [
+        "| Stamp | UTC time | Δ from start |",
+        "|---|---|---|",
+    ]
+    for ts, name, value in stamps:
+        delta_min = int((ts - start).total_seconds() // 60)
+        delta = _format_duration(delta_min) or "0m"
+        lines.append(f"| {name} | {value} | {delta} |")
+    return lines
+
+
 def _render_report(
     workflow_dir: Path,
     work_item_id: str,
@@ -484,16 +673,22 @@ def _render_report(
         f"> Generated: {generated_at}",
         f"> Round: {round_label}",
         f"> Workflow directory: {workflow_dir.name}",
-        "",
-        "## Aggregates",
-        "",
-        "| Metric | Value |",
-        "|---|---|",
     ]
-    for k, v in aggregates.items():
-        display = "—" if v is None else str(v)
-        lines.append(f"| {k.replace('_', ' ')} | {display} |")
+    summary = _render_summary(aggregates, tasks)
+    if summary:
+        lines.append(f"> **Summary**: {summary}")
     lines.append("")
+
+    lines.append("## Aggregates")
+    lines.append("")
+    lines.append("| Metric | Value |")
+    lines.append("|---|---|")
+    for k, v in aggregates.items():
+        lines.append(
+            f"| {_human_label(k)} | {_format_aggregate_value(k, v, workflow_metrics, workflow_dir)} |"
+        )
+    lines.append("")
+
     lines.append("## Per-Task Summary")
     lines.append("")
     if tasks:
@@ -510,30 +705,22 @@ def _render_report(
     else:
         lines.append("(no task rows parsed)")
     lines.append("")
+
     lines.append("## Token Usage")
     lines.append("")
     lines.append("| Field | Value |")
     lines.append("|---|---|")
-    token_keys = [
-        ("tokens_input", "Input tokens"),
-        ("tokens_output", "Output tokens"),
-        ("tokens_cache_read", "Cache read tokens"),
-        ("tokens_cache_write", "Cache write tokens"),
-    ]
-    for agg_key, label in token_keys:
+    for agg_key in ("tokens_input", "tokens_output", "tokens_cache_read", "tokens_cache_write"):
         raw = aggregates.get(agg_key, "")
         # CC-02.4.2 / ADR-002: empty string means the hook hasn't landed yet —
         # render "tokens unavailable" rather than "0" or blank.
-        display = raw if raw != "" else "tokens unavailable"
-        lines.append(f"| {label} | {display} |")
+        display = _format_tokens(raw) if raw not in (None, "") else "tokens unavailable"
+        lines.append(f"| {_human_label(agg_key)} | {display} |")
     lines.append("")
-    lines.append("## Source Workflow Metrics")
+
+    lines.append("## Phase Timeline")
     lines.append("")
-    if workflow_metrics:
-        for k, v in workflow_metrics.items():
-            lines.append(f"- **{k}**: {v}")
-    else:
-        lines.append("(no workflow metrics parsed)")
+    lines.extend(_render_timeline(workflow_metrics))
     lines.append("")
     return "\n".join(lines)
 
