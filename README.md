@@ -1,4 +1,4 @@
-# ai-sdlc-harness · v2.0
+# ai-sdlc-harness · v2.1
 
 **An AI-driven SDLC harness for Claude Code.** Drives a real engineering workflow — requirements → plan → tests → code → review → security → PR → reconcile — across one or many repos. Multi-agent, language-agnostic, discovery-driven. No application code lives here, only the agents, skills, hooks, and conventions that run them.
 
@@ -8,6 +8,20 @@
 | **Dev Workflow** | Take a story from requirements to merged PR end-to-end | `/dev-workflow <work-item-id>` |
 
 > The authoritative workflow specification — phases, ownership, status transitions, non-negotiable rules — lives in [CLAUDE.md](CLAUDE.md). This README is the guided tour. New to the harness? Start with [getting-started.md](getting-started.md) for the 10-minute install-to-first-story path.
+
+## What's new in v2.1
+
+| Area | Change |
+|---|---|
+| **Quick Mode** | New `/dev-workflow quick <id>` fast-path for trivial changes (typo fixes, one-character edits, lock-file bumps). Developer + Reviewer only — Planner and Tester are skipped per CC-05.8. Eligibility is heuristic-driven via `scripts/quick-mode-classify.py`; the tracker carries an explicit `Mode: quick` header and `Quick-Mode: true` flag so P9 metrics can segment quick-vs-full runs. `QPhaseGuard` enforces the invariants (no Planner invocation, no Tester invocation, single commit). |
+| **Aggregate workflow report** | New `/dev-workflow report` utility command. Reads `ai/_metrics-log.csv` and produces a multi-story rollup with `--since`, `--format md\|json`, `--story` filters. Markdown output is a Mermaid-charted scorecard; JSON is plain rows for downstream tooling. |
+| **Manifest schema for commands** | Every dev-workflow command file now ships with a sibling `<command>.manifest.yaml` declaring its prerequisites, produced artifacts, exit criteria, and gate emissions. A new manifest-schema doc + cc-check enforces parity. Consumers (the orchestrator, `workflow-status`, future automation) read manifests instead of grepping command prose. |
+| **Markdown size budgets** | New `cc-check-md-budget` Convention-Check enforces per-file size caps from `agents/shared/markdown-budgets.md` (e.g. command files ≤ 400 lines, context files ≤ 200). Started in WARN mode, flipped to BLOCK in this release. `scripts/markdown-size-report.py` is the human-facing version (sorted budget-status table). Top-4 command files were surgically reduced to fit (`orchestrator-rules.md` 420 → 164; `plan-generator/SKILL.md` 830 → 337). |
+| **Cost + token observability** | New Stop hook `metrics-token-collector.py` aggregates per-turn token counts into the tracker so P9 metrics can report agent-token totals per phase. `_metrics-log.csv` schema bumped to v1.1.0 with a non-destructive migration. New `cost-config.md` template carries per-model rate cards; `init-workspace` Step 6d lays it down at workspace bootstrap. |
+| **Tracker + status schema v1.1** | The two cross-cutting schemas under `agents/shared/` accumulated the v2.1 amendment batch — `Mode:` header, `Workflow-Dir:` field, `Test hardening completed`/`Security review completed` stamps, ad-hoc batch counters, the `Quick-Mode:` flag. The Quick-Mode metric stamp + token-total field are reader-required (P9), writer-required (per-phase emitters). |
+| **TDD-skip planner heuristics** | The Planner's `agents/planner/index.md` carries a new section on when to recommend Quick Mode versus the full workflow at intake. Heuristics live in `scripts/classify_change.py` so they're testable and tunable in one place. |
+| **Doc surgery (CC-04.8)** | Five context/command files restructured to fit the 200/400-line caps without losing content — shared snippets moved into siblings, cross-refs replace duplication. `orchestrator-rules.md`, `plan-generator/SKILL.md`, `develop.md`, `plan.md`, `requirements.md`, `create-pr.md` all in scope. |
+| **Subagent_type mapping table** | `orchestrator-rules.md` now spells out the fully-qualified `subagent_type` for each `@ai-sdlc-X` mention (the four agent roles plus the reviewer's four modes), so the `Agent` tool can be invoked without the orchestrator pattern-matching plugin prefix + role from the mention text. CC-04. |
 
 ## What's new in v2.0
 
