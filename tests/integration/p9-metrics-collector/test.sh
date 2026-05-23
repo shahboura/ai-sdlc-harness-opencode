@@ -429,4 +429,91 @@ test_t2_roundN_without_analysis_report_exits_2_no_csv() {
     fi
 }
 
+# ─── Phase Summary section (new at-the-top per-phase rollup) + per-task
+#     Duration / Tokens columns + the per-task attribution caveat ──────
+
+test_phase_summary_section_renders_with_canonical_fixture() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    if ! grep -qE '^## Phase Summary' "$report"; then
+        _fail "metrics-report.md missing '## Phase Summary' section"
+        return 1
+    fi
+    if ! grep -qE '^\| Phase \| Duration \| Tokens \(in / out\) \| Cache \(read\) \|' "$report"; then
+        _fail "metrics-report.md Phase Summary missing canonical column header"
+        return 1
+    fi
+    # P1: Workflow started 08:00 → Plan approved 08:30 = 30m.
+    if ! grep -qE '^\| P1 — Requirements \| 30m \|' "$report"; then
+        _fail "Phase Summary missing P1 — Requirements row with 30m duration"
+        return 1
+    fi
+    # P3: Development started 09:00 → Initial development completed 11:45 = 2h 45m.
+    if ! grep -qE '^\| P3 — Development \| 2h 45m \|' "$report"; then
+        _fail "Phase Summary missing P3 — Development row with 2h 45m duration"
+        return 1
+    fi
+    # P5: Test hardening started 11:50 → completed 12:30 = 40m (sub-hour format).
+    if ! grep -qE '^\| P5 — Test hardening \| 40m \|' "$report"; then
+        _fail "Phase Summary missing P5 — Test hardening row with 40m duration"
+        return 1
+    fi
+    # P4 / P5.5 / P6 / P7 stamps absent in canonical fixture — those phases
+    # MUST NOT appear in the Phase Summary (partial-workflow skip rule).
+    # Scope the grep to the Phase Summary section only — the Aggregates
+    # table also uses these phase labels and would false-positive a
+    # full-report grep.
+    local phase_section
+    phase_section=$(sed -n '/^## Phase Summary/,/^## /p' "$report")
+    if echo "$phase_section" | grep -qE '^\| P4 — Approval gate \|'; then
+        _fail "Phase Summary should skip P4 — Approval gate row (no Human approval stamp in fixture)"
+        return 1
+    fi
+    if echo "$phase_section" | grep -qE '^\| P7 — Review response \|'; then
+        _fail "Phase Summary should skip P7 — Review response row (no PR review response stamp)"
+        return 1
+    fi
+    # Total = P1 (30m) + P2 (30m) + P3 (165m) + P5 (40m) = 265m = 4h 25m.
+    if ! grep -qE '^\| \*\*Total\*\* \| 4h 25m \|' "$report"; then
+        _fail "Phase Summary missing **Total** row with 4h 25m (sum of P1+P2+P3+P5)"
+        return 1
+    fi
+    # Section ordering — Phase Summary must precede Aggregates.
+    local phase_line
+    local agg_line
+    phase_line=$(grep -nE '^## Phase Summary' "$report" | head -1 | cut -d: -f1)
+    agg_line=$(grep -nE '^## Aggregates' "$report" | head -1 | cut -d: -f1)
+    if [ "$phase_line" -ge "$agg_line" ]; then
+        _fail "Phase Summary (line $phase_line) must appear before Aggregates (line $agg_line)"
+        return 1
+    fi
+}
+
+test_per_task_summary_has_duration_tokens_columns_and_caveat() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    if ! grep -qE '^\| Task \| Status \| Review Rounds \| Started \| Completed \| Duration \| Tokens \(in \+ out\) \|' "$report"; then
+        _fail "Per-Task Summary missing Duration + 'Tokens (in + out)' columns in header"
+        return 1
+    fi
+    # T1 duration = 09:00 → 10:30 = 1h 30m.
+    if ! grep -qE '\| T1 \|.*\| 1h 30m \|' "$report"; then
+        _fail "Per-Task T1 row missing '1h 30m' Duration cell"
+        return 1
+    fi
+    # T2 duration = 10:35 → 11:45 = 1h 10m.
+    if ! grep -qE '\| T2 \|.*\| 1h 10m \|' "$report"; then
+        _fail "Per-Task T2 row missing '1h 10m' Duration cell"
+        return 1
+    fi
+    if ! grep -qE '\*Per-task tokens are rough attribution' "$report"; then
+        _fail "Per-Task Summary missing italic caveat about token attribution"
+        return 1
+    fi
+}
+
 run_workflow_tests

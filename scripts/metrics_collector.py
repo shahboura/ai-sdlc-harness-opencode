@@ -135,6 +135,26 @@ _TOKEN_KEYS = {
     "tokens_cache_write",
 }
 
+# Phase definitions for the Phase Summary table (label, start_stamp_key,
+# end_stamp_key). A phase row appears only when BOTH stamps are present
+# in the tracker — partial workflows (no review cycles, no security
+# review, etc.) silently skip the rows they didn't reach. Order matches
+# the workflow's execution sequence so the rendered table reads
+# top-to-bottom in time order.
+#
+# CC-04.5 — single declaration of phase labels; renderers MUST NOT
+# duplicate these strings inline.
+_PHASE_DEFINITIONS: List[Tuple[str, str, str]] = [
+    ("P1 — Requirements",      "Workflow started",             "Plan approved"),
+    ("P2 — Planning",          "Plan approved",                "Development started"),
+    ("P3 — Development",       "Development started",          "Initial development completed"),
+    ("P4 — Approval gate",     "Initial development completed", "Human approval (impl)"),
+    ("P5 — Test hardening",    "Test hardening started",       "Test hardening completed"),
+    ("P5.5 — Security review", "Test hardening completed",     "Security review completed"),
+    ("P6 — PR creation",       "Security review completed",    "PR created"),
+    ("P7 — Review response",   "PR created",                   "PR review response completed"),
+]
+
 
 def _parse_timestamp(s: str) -> Optional[dt.datetime]:
     s = s.strip()
@@ -387,6 +407,67 @@ def _load_token_totals(workflow_dir: Path) -> Dict[str, str]:
     if not any_data:
         return null_result
     return {k: str(v) for k, v in totals.items()}
+
+
+def _token_window_bucket(
+    workflow_dir: Path,
+    windows: List[Tuple[str, dt.datetime, dt.datetime]],
+) -> Dict[str, Dict[str, int]]:
+    """Bucket `.token-log.jsonl` entries into named time windows.
+
+    Iterates the log once and attributes each entry to the FIRST window
+    whose `[start, end]` (inclusive) contains the entry's `ts`. The
+    first-match-wins rule keeps the bucketing deterministic when phases
+    or parallel-repo tasks overlap (e.g. P5.5 / P6 sequential stamps,
+    or T1 on AuthService running concurrently with T1' on BillingService).
+
+    Returns a dict keyed by window label, each value a four-key totals
+    dict (`tokens_input`, `tokens_output`, `tokens_cache_read`,
+    `tokens_cache_write`) plus `entry_count`. Windows with no matching
+    log entries return zero-filled totals (caller decides whether to
+    render as `0` or `—`).
+
+    Per CC-08.1 this is the single bucketing primitive used by both
+    `_render_phase_summary` and the per-task summary; duplicating the
+    JSONL iteration loop would be a CC-04.5 drift surface.
+    """
+    import json  # local — keep top-level imports lean
+
+    keys = ("tokens_input", "tokens_output", "tokens_cache_read", "tokens_cache_write")
+    out: Dict[str, Dict[str, int]] = {
+        label: {k: 0 for k in keys} | {"entry_count": 0}
+        for label, _, _ in windows
+    }
+    log_path = workflow_dir / ".token-log.jsonl"
+    if not log_path.is_file() or not windows:
+        return out
+
+    try:
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            ts = _parse_timestamp(entry.get("ts", ""))
+            if ts is None:
+                continue
+            for label, start, end in windows:
+                if start <= ts <= end:
+                    for k in keys:
+                        v = entry.get(k)
+                        if v is not None:
+                            try:
+                                out[label][k] += int(v)
+                            except (TypeError, ValueError):
+                                pass
+                    out[label]["entry_count"] += 1
+                    break  # first-match-wins; do not double-count overlapping windows
+    except (OSError, UnicodeDecodeError):
+        pass
+    return out
 
 
 def _migrate_csv_if_needed(csv_path: Path) -> None:
@@ -658,6 +739,93 @@ def _render_timeline(workflow_metrics: Dict[str, str]) -> List[str]:
     return lines
 
 
+def _compute_phase_windows(
+    workflow_metrics: Dict[str, str],
+) -> List[Tuple[str, dt.datetime, dt.datetime]]:
+    """Build phase windows from `_PHASE_DEFINITIONS`. Skips phases whose
+    start or end stamp is absent / unparseable."""
+    out: List[Tuple[str, dt.datetime, dt.datetime]] = []
+    for label, start_key, end_key in _PHASE_DEFINITIONS:
+        start = _parse_timestamp(workflow_metrics.get(start_key, ""))
+        end = _parse_timestamp(workflow_metrics.get(end_key, ""))
+        if start and end and end >= start:
+            out.append((label, start, end))
+    return out
+
+
+def _compute_task_windows(
+    tasks: List[Dict[str, str]],
+) -> List[Tuple[str, dt.datetime, dt.datetime]]:
+    """Build per-task windows from the Task Metrics table's `Started` /
+    `Completed` columns. Skips tasks lacking either stamp (typical for
+    T-TEST rows that record only Phase 5 aggregate stamps)."""
+    out: List[Tuple[str, dt.datetime, dt.datetime]] = []
+    for row in tasks:
+        task_id = next(iter(row.values()), "")
+        start = _parse_timestamp(row.get("Started", ""))
+        end = _parse_timestamp(row.get("Completed", ""))
+        if task_id and start and end and end >= start:
+            out.append((task_id, start, end))
+    return out
+
+
+def _render_phase_summary(
+    workflow_metrics: Dict[str, str],
+    workflow_dir: Path,
+) -> List[str]:
+    """Render the `## Phase Summary` section — per-phase Duration +
+    token bucketing. Returns the markdown lines (no trailing blank).
+
+    Skipped entirely when no phase windows can be computed (returns a
+    single placeholder line). The Total row's Duration is the SUM of
+    per-phase durations — i.e. time spent inside known phase windows;
+    excludes gaps between phases. Wall-clock cycle time lives in the
+    Aggregates table.
+    """
+    windows = _compute_phase_windows(workflow_metrics)
+    if not windows:
+        return ["(no phase windows available — workflow metrics block has no parseable phase boundary pairs)"]
+    buckets = _token_window_bucket(workflow_dir, windows)
+
+    lines = [
+        "| Phase | Duration | Tokens (in / out) | Cache (read) |",
+        "|---|---|---|---|",
+    ]
+    total_minutes = 0
+    total_in = 0
+    total_out = 0
+    total_cr = 0
+    for label, start, end in windows:
+        minutes = int((end - start).total_seconds() // 60)
+        total_minutes += minutes
+        b = buckets.get(label, {})
+        tin = b.get("tokens_input", 0)
+        tout = b.get("tokens_output", 0)
+        tcr = b.get("tokens_cache_read", 0)
+        total_in += tin
+        total_out += tout
+        total_cr += tcr
+        tokens_cell = (
+            f"{_format_tokens(tin) or '0'} / {_format_tokens(tout) or '0'}"
+            if (tin or tout)
+            else "—"
+        )
+        cache_cell = _format_tokens(tcr) if tcr else "—"
+        lines.append(
+            f"| {label} | {_format_duration(minutes) or '0m'} | {tokens_cell} | {cache_cell} |"
+        )
+    total_tokens_cell = (
+        f"{_format_tokens(total_in)} / {_format_tokens(total_out)}"
+        if (total_in or total_out)
+        else "—"
+    )
+    total_cache_cell = _format_tokens(total_cr) if total_cr else "—"
+    lines.append(
+        f"| **Total** | {_format_duration(total_minutes) or '0m'} | {total_tokens_cell} | {total_cache_cell} |"
+    )
+    return lines
+
+
 def _render_report(
     workflow_dir: Path,
     work_item_id: str,
@@ -679,6 +847,11 @@ def _render_report(
         lines.append(f"> **Summary**: {summary}")
     lines.append("")
 
+    lines.append("## Phase Summary")
+    lines.append("")
+    lines.extend(_render_phase_summary(workflow_metrics, workflow_dir))
+    lines.append("")
+
     lines.append("## Aggregates")
     lines.append("")
     lines.append("| Metric | Value |")
@@ -692,16 +865,33 @@ def _render_report(
     lines.append("## Per-Task Summary")
     lines.append("")
     if tasks:
-        lines.append("| Task | Status | Review Rounds | Started | Completed |")
-        lines.append("|---|---|---|---|---|")
+        # Per-task token bucketing — first-match-wins by Started→Completed window.
+        task_windows = _compute_task_windows(tasks)
+        task_token_buckets = _token_window_bucket(workflow_dir, task_windows)
+
+        lines.append("| Task | Status | Review Rounds | Started | Completed | Duration | Tokens (in + out) |")
+        lines.append("|---|---|---|---|---|---|---|")
         for row in tasks:
-            first_col = next(iter(row.values()), "?")
+            task_id = next(iter(row.values()), "?")
+            start = _parse_timestamp(row.get("Started", ""))
+            end = _parse_timestamp(row.get("Completed", ""))
+            if start and end and end >= start:
+                duration = _format_duration(int((end - start).total_seconds() // 60)) or "0m"
+            else:
+                duration = "—"
+            bucket = task_token_buckets.get(task_id, {})
+            tin = bucket.get("tokens_input", 0)
+            tout = bucket.get("tokens_output", 0)
+            tokens_cell = _format_tokens(tin + tout) if (tin or tout) else "—"
             lines.append(
-                f"| {first_col} | {row.get('Status', '—')} | "
+                f"| {task_id} | {row.get('Status', '—')} | "
                 f"{row.get('Review Rounds', '0')} | "
                 f"{row.get('Started', '—')} | "
-                f"{row.get('Completed', '—')} |"
+                f"{row.get('Completed', '—')} | "
+                f"{duration} | {tokens_cell} |"
             )
+        lines.append("")
+        lines.append("*Per-task tokens are rough attribution by session timestamp; parallel tasks across repos may share credit.*")
     else:
         lines.append("(no task rows parsed)")
     lines.append("")
