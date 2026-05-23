@@ -480,6 +480,12 @@ test_phase_summary_section_renders_with_canonical_fixture() {
         _fail "Phase Summary missing **Total** row with 4h 25m (sum of P1+P2+P3+P5)"
         return 1
     fi
+    # Short-phase token-attribution caveat (substring match — wording may
+    # tweak over time, but the lead-in phrase is the contract).
+    if ! grep -qF 'Short phases' "$report"; then
+        _fail "Phase Summary missing italic caveat explaining the short-phase token gap"
+        return 1
+    fi
     # Section ordering — Phase Summary must precede Aggregates.
     local phase_line
     local agg_line

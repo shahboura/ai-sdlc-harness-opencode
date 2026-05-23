@@ -823,6 +823,13 @@ def _render_phase_summary(
     lines.append(
         f"| **Total** | {_format_duration(total_minutes) or '0m'} | {total_tokens_cell} | {total_cache_cell} |"
     )
+    lines.append("")
+    lines.append(
+        "*Short phases (typically < 10 min) may show “—” for tokens — "
+        "Stop events fire at session boundaries, not phase boundaries, and short "
+        "orchestrator-stamping intervals rarely contain a session-end timestamp. "
+        "Non-LLM phases (e.g. Security review) emit no Stop events and will always show “—”.*"
+    )
     return lines
 
 
