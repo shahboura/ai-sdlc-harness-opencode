@@ -130,7 +130,7 @@ EOF
 
 **If the workspace is NOT a git repo** (exits non-zero — workspace-separated case):
 
-**Skip this step entirely.** The plan stays at `<WORKSPACE_ROOT>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (new) or `<WORKSPACE_ROOT>/ai/plans/<id>.md` (legacy) per orchestrator rule #8 and travels into each affected repo alongside the tracker in Phase 6 (`commands/create-pr.md` Step 6).
+**Skip this step entirely.** The plan stays at `<WORKSPACE_ROOT>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (new) or `<WORKSPACE_ROOT>/ai/plans/<id>.md` (legacy) per orchestrator rule #8 and travels into each affected repo alongside the tracker and test outline in Phase 6 (`commands/create-pr.md` Step 6 Case B).
 
 Do NOT `cp` or otherwise copy the plan into a code repo at this phase — rule #8 forbids it, and the `bash-write-guard` hook will block any Bash write to `/ai/` paths by design. If a command file step appears to conflict with rule #8, surface the conflict to the human per the Conflict-Surfacing Rule in `context/orchestrator-rules.md` rather than inventing a workaround.
 

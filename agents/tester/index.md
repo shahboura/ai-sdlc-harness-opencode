@@ -57,7 +57,7 @@ conventions without exception. If no LANGUAGE CONTEXT is provided, ask the orche
 > **Path resolution**: When this protocol references `ai/plans/*` or `ai/tasks/*`, those are the **legacy** layout. Per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md) (M-14), the canonical layout is `ai/<YYYY-MM-DD>-<work-item-id>/{plan,tracker,test-outline}.md`. Resolve actual targets via the new layout first; fall back to legacy during the migration window.
 
 ### auto-tdd mode
-1. **Read the Test Outline** for T(n) from the plan at `ai/*-<story-id>/plan.md` (or legacy `ai/plans/*<story-id>*`). Identify the exact test names and intents you must implement.
+1. **Read the Test Outline** for T(n) from `ai/*-<story-id>/test-outline.md` (canonical M-14 layout per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md)). On legacy workspaces where `test-outline.md` is absent, fall back to the `## Test Outline` section of `ai/plans/*<story-id>*.md`. Identify the exact test names and intents you must implement.
 2. **Locate your work directory:**
    - The orchestrator creates the worktree before launching you and inlines its location into your prompt. Read **WORKTREE DETAILS** from the prompt:
      - `Worktree path` — your working directory for all reads, writes, edits, and builds.

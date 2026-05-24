@@ -4,6 +4,33 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ---
 
+## [2.1.0] — 2026-05-21
+
+> **The Quick-Mode + observability release.** A fast-path for trivial changes, a workspace-wide metrics report, a manifest schema for every command, enforced markdown-size budgets, and the cost / token-count plumbing that makes per-phase economics measurable. Plus the doc surgery that brought the largest context / command files back under their CC-04.8 line caps.
+
+### Release highlights
+
+| Theme | What changed |
+|---|---|
+| **Quick Mode (`/dev-workflow quick`)** | New fast-path phase for trivial changes — Developer + Reviewer only, no Planner, no Tester. CC-05.8 declares the contract; `scripts/quick-mode-classify.py` is the eligibility heuristic; `QPhaseGuard` enforces the invariants (no Planner / no Tester invocation, single commit). Tracker carries `Mode: quick` + `Quick-Mode: true` so P9 metrics segments quick vs. full runs. |
+| **Aggregate report (`/dev-workflow report`)** | New utility command rolls up `ai/_metrics-log.csv` across stories with `--since`, `--format md\|json`, `--story` filters. Markdown output is a Mermaid scorecard; JSON is plain rows for downstream tooling. |
+| **Manifest schema for commands** | Every dev-workflow command file ships a sibling `<command>.manifest.yaml` declaring prerequisites, produced artifacts, exit criteria, gate emissions. A `manifest-schema.md` doc + parity check live alongside. Consumers read manifests instead of grepping command prose. |
+| **Markdown size budgets (CC-04.8)** | New `cc-check-md-budget` Convention-Check enforces per-file size caps from `agents/shared/markdown-budgets.md` (command files ≤ 400 lines, context files ≤ 200). Started WARN, flipped to BLOCK in this release. The top-4 oversized command files were surgically reduced — `orchestrator-rules.md` 420 → 164, `plan-generator/SKILL.md` 830 → 337, plus surgery on `develop.md`, `plan.md`, `requirements.md`, `create-pr.md`. |
+| **Cost + token observability** | New Stop hook `scripts/metrics-token-collector.sh` (+ `_metrics_token_collector.py` body) aggregates per-turn token counts into the tracker. `_metrics-log.csv` schema bumped to v1.1.0 — `metrics_collector.py` performs the upgrade in-place on the next append (no separate migration command). New `cost-config.md` template carries per-model rate cards; `init-workspace` Step 6d lays it down at workspace bootstrap. P9 `metrics-collector` reads these fields when assembling per-workflow + workspace-level reports. **Hardening pass before tag**: `metrics_collector.py` now parses the canonical v2.1 tracker layout (the pre-tag draft was still reading the v2.0 layout for a couple of fields); it's guarded against premature-trigger invocations (the Stop hook would previously fire before the tracker existed and append a half-row); `metrics-report.md` rendering is humanised with per-task duration / token breakdowns and a per-phase summary that explicitly caveats short phases where Stop-hook attribution gaps produce token totals lower than the per-phase delta; and the Stop hook ships with the executable bit set. |
+| **Schema amendments (v1.1)** | Approved v2.1 amendment batch applied to `agents/shared/tracker-field-schema.md` and `agents/shared/status-schema.md`: `Mode:` header, `Workflow-Dir:` field, `Test hardening completed` / `Security review completed` / `Ad-hoc requests started/completed` stamps, `Quick-Mode:` flag. |
+| **Test Outline relocation** | `test-outline.md` is now the sole home for the Test Outline — every consumer (Planner, Tester, `develop.md`, `review-response.md`, `handle-request.md`, the Phase 6 per-repo copy step) reads / writes the separable `ai/<YYYY-MM-DD>-<id>/test-outline.md` artifact instead of the legacy `plan.md`-embedded section, restoring CC-04.5 DRY and CC-05.2 separable-artifact compliance. `plan-generator/SKILL.md` Step 5 carries a NON-NEGOTIABLE Sync rule that regenerates `test-outline.md` in lock-step with every tracker change (GATE #1 revisions, `pr-response-tasks`, `ad-hoc-tasks`). Paired with the authority-spec wording amendment journaled in [execution-log.md](execution-log.md#2026-05-22--authority-spec-amendment-test-outline-relocation). |
+| **Subagent_type mapping** | `skills/dev-workflow/context/orchestrator-rules.md` now spells out the fully-qualified `subagent_type` for each `@ai-sdlc-X` mention (the four agent roles plus the reviewer's four modes). Eliminates the model-side pattern-matching ambiguity that occasionally produced `Agent type 'ai-sdlc-harness:planner' not found` retries. |
+| **Planner TDD-skip heuristics** | `agents/planner/index.md` carries a new section on when to recommend Quick Mode at story intake. Heuristics live in `scripts/quick-mode-classify.py` so they're testable and tunable in one place. |
+| **Integration tests** | Two new end-to-end integration tests: `tests/integration/quick-mode-round-trip/test.sh` exercises the full Quick Mode flow (Developer + Reviewer, no Planner / no Tester, single commit) against a real fixture; `tests/integration/p9-metrics-collector/test.sh` exercises the P9 metrics-collection contract end-to-end (337 lines, runs `metrics_collector.py` against the canonical v2.1 tracker layout and asserts per-workflow + workspace-level outputs). |
+
+### Upgrade notes
+
+- No breaking changes vs. v2.0. The `Mode:` and `Quick-Mode:` tracker fields are optional — pre-v2.1 trackers continue to read with `Mode` treated as `full`.
+- The `_metrics-log.csv` schema bump to v1.1.0 is applied automatically by `scripts/metrics_collector.py` on the next append — existing rows are preserved and the five new columns (`tokens_input`, `tokens_output`, `tokens_cache_read`, `tokens_cache_write`, `mode`) are back-filled with `null`.
+- `cc-check-md-budget` is now BLOCK-mode; if you maintain a fork with oversized markdown files, run `python3 scripts/markdown-size-report.py` to see the surface and trim under the caps.
+
+---
+
 ## [2.0.0] — 2026-05-18
 
 > **The workflow-state release.** Per-workflow artefact directories, first-class

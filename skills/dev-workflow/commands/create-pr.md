@@ -219,12 +219,14 @@ First, determine whether the workspace `ai/<YYYY-MM-DD>-<work-item-id>/` directo
 git -C ai/<YYYY-MM-DD>-<work-item-id>/ rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**Case A — workspace IS a git repo** (exits 0 — single-repo stories where the workspace itself is the target repository; the plan, tracker, and code all live in the same git tree):
+**Case A — workspace IS a git repo** (exits 0 — single-repo stories where the workspace itself is the target repository; the plan, tracker, test outline, and code all live in the same git tree):
+
+The directory-level `git add` below picks up the tracker and the test outline together — the tracker stayed uncommitted from Phase 2 per orchestrator rule #8, and the test outline stayed uncommitted alongside it (preflight Step 3 only committed `plan.md`).
 
 ```bash
 git add ai/<YYYY-MM-DD>-<work-item-id>/
 git commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: add task tracker with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker and test outline with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
@@ -233,15 +235,16 @@ EOF
 
 **Case B — workspace is NOT a git repo** (exits non-zero — the multi-repo design case, where the workspace is a standalone directory holding `ai/` artifacts and the affected repos are cloned alongside it; this is the design's headline case and what every multi-repo story uses):
 
-For each affected repo, copy the tracker and plan into that repo's `ai/` directories, then commit from the repo.
+For each affected repo, copy the tracker, plan, and test outline into that repo's `ai/` directories, then commit from the repo. All three are sibling P2 artifacts (per [workflow-paths](../context/workflow-paths.md)) and must land together so the PR commit is self-contained.
 
 **Do NOT use `cp`.** The `bash-write-guard` hook blocks shell mutations to any path
 containing `/ai/` by design — `ai/` is owned by Read/Write tool calls, never by
 shell-driven mutations. Use the **Read** tool to read each workspace file and the **Write**
 tool to write it to the repo path:
 
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)    → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace)      → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)         → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
+- Read `ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md`
 
 Then commit from the repo:
 
@@ -249,14 +252,14 @@ Then commit from the repo:
 # For each affected repo at <REPO_PATH>:
 git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
 git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: add task tracker and plan with final workflow state
+#<STORY-ID> #TTRACKER: add task tracker, plan, and test outline with final workflow state
 
 Co-Authored-By: Claude Code <noreply@anthropic.com>
 EOF
 )"
 ```
 
-The tracker and plan now travel with the feature branch. All Step 9 amend operations target the same repo commit.
+The tracker, plan, and test outline now travel with the feature branch. All Step 9 amend operations target the same repo commit.
 
 ### Step 7 — Create PRs (One Per Repo)
 
@@ -290,8 +293,9 @@ related PRs in other repos:
 
 ### Step 9 — Record Final Metric
 
-After all PRs are created (or reused), set `PR created` to `date -u +"%Y-%m-%d %H:%M UTC"`
-in the tracker file. Then update the remote with the new tracker state.
+After all PRs are created (or reused), stamp `PR created` in the tracker — this is a hard precondition for Step 10's T1 metrics. Do NOT advance until the stamp is in place.
+
+**Sequence:** capture `PR_CREATED_TS=$(date -u +"%Y-%m-%d %H:%M UTC")`; use the **Edit** tool to add or update `| **PR created** | <PR_CREATED_TS> |` in the `## Workflow Metrics` block at `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (canonical row format per [`tracker-field-schema.md`](../../../agents/shared/tracker-field-schema.md)); re-read the tracker to verify; then update the remote per the Create-path / Reuse-path bash blocks below.
 
 **Read pr-creator's `Reuse:` flag** for each repo from its output contract (per
 `skills/pr-creator/SKILL.md` → Step 0). The flag determines which of the two paths
@@ -334,64 +338,22 @@ git -C "<REPO_PATH>" push --force-with-lease origin <feature-branch>
 
 #### Reuse path (`Reuse: true`) — fresh commit + fast-forward push
 
-In reuse mode the existing PR/MR is open against the feature branch with whatever review
-activity, CI runs, and inline comments have accumulated since it was first created.
-Amending and force-pushing the just-pushed Step 6 tracker commit produces two problems:
+Do NOT amend + force-push in reuse mode: force-push noise on the open PR orphans inline comments, and amend would overwrite an existing `PR created` metric from a prior run. Instead, create a **fresh** tracker-update commit (only if `PR created` is still `—`) and fast-forward push.
 
-1. **Force-push noise on the open PR.** Reviewers get notified, inline comments tied to
-   the previous tracker-commit SHA become orphaned references on most providers, and the
-   "Force-pushed" banner in the PR timeline distracts from the actual change.
-2. **Lost history.** The original PR may have been created in a prior run that completed
-   `PR created` correctly; this run's amend would overwrite the stored metric value with
-   the current re-run timestamp, silently losing the original creation date.
+**Set the metric only if it's still `—`.** If already populated, skip the commit.
 
-Instead, write the metric and create a **fresh** tracker-update commit on top of the
-Step 6 tracker commit, then fast-forward push. Analogous to Phase 7 Step 9's
-new-commit-not-amend pattern in `commands/review-response.md` (and for the same reason).
-
-**Set the metric only if it's still `—`** (the original run didn't successfully complete
-this step). If `PR created` is already populated from a prior run, leave it alone — the
-original creation date is the authoritative value.
-
-**If the workspace is a git repo:**
-
+**Workspace is a git repo:**
 ```bash
-# Only run the commit+push pair if PR_CREATED_WAS_UNSET=true (the metric was `—`
-# before this Step 9 ran). If it was already set, skip the commit — there is nothing
-# to record on the remote.
 git add ai/<YYYY-MM-DD>-<work-item-id>/
-git commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
+git commit -m "#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
 
-Co-Authored-By: Claude Code <noreply@anthropic.com>
-EOF
-)"
+Co-Authored-By: Claude Code <noreply@anthropic.com>"
 git push origin <feature-branch>
 ```
 
-**If the workspace is NOT a git repo:**
+**Workspace is NOT a git repo:** sync tracker via Read+Write into `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`, then `git -C "<REPO_PATH>" add … commit … push`.
 
-Sync the updated tracker into the repo via Read + Write (same constraint as the create
-path — `bash-write-guard` blocks Bash writes to `ai/` paths):
-
-- Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
-
-Then commit and push:
-
-```bash
-git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
-git -C "<REPO_PATH>" commit -m "$(cat <<'EOF'
-#<STORY-ID> #TTRACKER: record PR created timestamp on reuse
-
-Co-Authored-By: Claude Code <noreply@anthropic.com>
-EOF
-)"
-git -C "<REPO_PATH>" push origin <feature-branch>
-```
-
-Both pushes in the reuse path are fast-forward (one new commit on top of the remote tip),
-so `--force-with-lease` is not required and the open PR shows a single new commit in its
-timeline — no force-push banner, no orphaned inline comments.
+Fast-forward push — no `--force-with-lease` needed.
 
 ### Step 10 — T1 Metrics Collection
 
@@ -402,15 +364,19 @@ no agent, no LLM hop — that reads the just-stamped tracker, computes the six
 required workflow aggregates, writes a per-workflow `metrics-report.md` and
 appends one row to the workspace-level `ai/_metrics-log.csv`.
 
+**Precondition guard (NON-NEGOTIABLE):** Step 9's `PR created` stamp must exist before this runs — otherwise the row records empty `cycle_time_minutes`. The collector also enforces this defensively (exit 2 + `.error.md`); the call-site pre-check is for clarity:
+
 ```bash
+grep -qE '\*\*PR created\*\*|^PR created:' \
+  "ai/<YYYY-MM-DD>-<work-item-id>/tracker.md" \
+  || { echo "Step 10 skipped: PR created not stamped (re-run Step 9)" >&2; exit 0; }
+
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
     "ai/<YYYY-MM-DD>-<work-item-id>" \
     --round 0
 ```
 
-Exit semantics: `0` success, `1` validation failure (an `.error.md` sibling
-is written; the CSV is NOT appended), `2` precondition unmet (workflow dir
-or tracker missing).
+Exit semantics: `0` success, `1` validation failure (`.error.md` written, CSV not appended), `2` precondition unmet (PR created absent / workflow dir / tracker missing).
 
 On exit `1`/`2` the orchestrator surfaces the `.error.md` content verbatim
 to the human but **does not** abort PR creation — the PR is already on the

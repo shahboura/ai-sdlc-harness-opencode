@@ -70,17 +70,72 @@ Do NOT proceed to Phase 2 until you are confident all requirements are fully und
 ### Phase 2: Planning & Approval
 
 Use the **plan-generator** skill. It contains the full procedure for proposing design approaches,
-decomposing into tasks, producing a **Test Outline**, producing diagrams, and saving the plan + tracker files.
+decomposing into tasks, producing a **Test Outline**, producing diagrams, and saving the plan + tracker + test-outline files.
 
-**Test Outline (new Phase 2 deliverable):** For each task T(n), produce a list of test names
+**Test Outline (Phase 2 deliverable):** For each task T(n), produce a list of test names
 and one-line intents that the Tester will implement in Phase 3 before the Developer writes code.
-The Test Outline is part of the plan document and is reviewed by the human at GATE #1.
+The Test Outline lives in its own file at `ai/<YYYY-MM-DD>-<work-item-id>/test-outline.md` (a sibling of `plan.md`, per [workflow-paths](../../skills/dev-workflow/context/workflow-paths.md)) and is reviewed by the human at GATE #1 alongside the plan. The two files are kept in lock-step — any plan revision that adds, removes, renames, or re-numbers a task MUST be paired with the corresponding `test-outline.md` edit in the same revision turn.
 
 - Name tests using the `Subject_Scenario_Outcome` convention for the target language/framework.
-- Mark `test-required: false` for tasks with no observable behaviour: config changes, dependency
-  bumps, file renames, scaffolding with no branching logic.
+- Mark `test-required: false` for tasks that fall into a safe category — see [TDD-Skip Heuristics](#tdd-skip-heuristics-fr-10) below for worked examples and exact category names.
 - Record `test-required: true|false` in the Notes column of every tracker task row.
 - Create one `T-TEST-<RepoName>` tracker row per affected repo for Phase 5 test hardening (e.g., `T-TEST-AuthService`). Notes value: `Phase 5`.
+
+## TDD-Skip Heuristics (FR-10)
+
+<!-- Added by: dev-workflow-plan.md [M-25] [IMPL-25-02]
+     Reason: FR-10 worked examples so the Planner can cite a specific safe category
+     instead of guessing. Category names are the single source of truth shared with
+     scripts/quick-mode-classify.py (ADR-011, CC-04.1).
+     CC conventions applied: CC-04.1 (single source of truth), ADR-011. -->
+
+Use `test-required: false` **only** when a task falls entirely within one of the four
+safe categories below. The category name you write in the Notes column must exactly
+match the canonical identifier — these names are shared with
+`scripts/quick-mode-classify.py` and `.claude/context/quick-mode-config.md` (ADR-011).
+
+| Category | Canonical identifier | When `test-required: false` is correct |
+|---|---|---|
+| UI style / copy | `ui-style-copy` | CSS tweaks, wording changes, icon swaps, theme variables — no logic branch added or removed. |
+| Infrastructure config | `infra-config` | YAML/Terraform/Helm changes where no new execution path is introduced; just value or flag changes. |
+| Exploratory data scripts | `exploratory-data` | One-off analysis scripts, Jupyter notebooks, or migration scripts that are run manually and discarded — not part of the production call graph. |
+| Docs / changelog only | `doc-only` | Changes only to `.md`, `.rst`, `CHANGELOG`, inline comments, or `README` — zero executable code changed. |
+
+### Worked examples
+
+**`ui-style-copy`** — changing a button label and its CSS colour:
+```
+T1  Update "Submit" → "Send" label and primary-blue hex   test-required: false · Why-no-test: ui-style-copy
+```
+
+**`infra-config`** — bumping a Terraform variable default:
+```
+T1  Increase default RDS instance size from db.t3.micro to db.t3.small
+    test-required: false · Why-no-test: infra-config
+```
+
+**`exploratory-data`** — adding a one-time data-quality script:
+```
+T1  Script to count null user_ids in production snapshot (run once, delete after)
+    test-required: false · Why-no-test: exploratory-data
+```
+
+**`doc-only`** — updating CHANGELOG and a README section:
+```
+T1  Add v2.1 entry to CHANGELOG.md and update install steps in README
+    test-required: false · Why-no-test: doc-only
+```
+
+### When to split a task instead
+
+If part of the change is behavioural and part is cosmetic, **split into two tasks**:
+- T1 (behavioural logic): `test-required: true`
+- T2 (labels/copy): `test-required: false · Why-no-test: ui-style-copy`
+
+Never apply `test-required: false` to a task that also introduces logic. When in doubt,
+set `test-required: true` — the reviewer can downgrade.
+
+---
 
 ## Pre-Flight Check
 
@@ -91,7 +146,7 @@ Before starting any work, **read ALL tracker files** matching the current Story 
 
 ## File Writing Rules — STRICT, NO EXCEPTIONS
 
-You **must** save plan and tracker files yourself using the `Write` and `Edit` tools directly. Do NOT delegate file writing to the orchestrator or any other agent.
+You **must** save plan, tracker, and test-outline files yourself using the `Write` and `Edit` tools directly. Do NOT delegate file writing to the orchestrator or any other agent.
 
 ### Write-scope constraint (hard rule)
 
@@ -125,7 +180,7 @@ After every `Write` or `Edit` call, **verify the file was saved** by reading it 
 
 - You do NOT write production code or test code — only plans, Test Outlines, and tracker files.
 - Always surface uncertainty. Never assume requirements.
-- The approved plan (including the Test Outline) is the **single source of truth** for the entire workflow.
+- The approved plan + tracker + test-outline trio is the **single source of truth** for the entire workflow. `plan.md` carries design and decomposition; `tracker.md` carries task state; `test-outline.md` carries the per-task test list. The three files are siblings under `ai/<YYYY-MM-DD>-<work-item-id>/` and must be kept consistent on every revision.
 - Every tracker task row must have `test-required: true` or `test-required: false` in its Notes column.
 
 ## Error Reporting

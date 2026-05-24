@@ -91,6 +91,10 @@ test_t1_round0_writes_report_csv_and_stamps_tracker() {
 test_t1_then_t2_appends_two_rows() {
     _setup_populated_tracker
     python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    # T2 precondition (post-defensive-gate): an analysis report must exist
+    # in the workflow dir. Simulate the per-cycle artifact written by
+    # `review-response.md`.
+    touch "$WF_WORKFLOW_DIR/pr-comment-analysis-report-1.md"
     python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null
     local csv="$WF_WORKSPACE/ai/_metrics-log.csv"
     local rows
@@ -181,6 +185,339 @@ test_missing_workflow_dir_exits_2() {
     rc=$(python3 "$COLLECTOR" "/tmp/does-not-exist-$$" --round 0 >/dev/null 2>&1; echo $?)
     if [ "$rc" != "2" ]; then
         _fail "expected exit 2 on missing workflow dir; got $rc"
+        return 1
+    fi
+}
+
+# ─── Canonical post-v2.1 tracker layout (locks the regression that
+#     left cycle_time, p3/p5 durations, reviewer_rework_rounds, and the
+#     per-task summary blank against real v2.1 trackers) ──────────────────
+
+_setup_canonical_tracker() {
+    cat > "$WF_TRACKER_PATH" <<EOF
+# Tracker — ${WF_STORY_ID}
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T1 | repo | first | ✅ Done | ✅ Approved | abc1234 | test-required: true |
+| T2 | repo | second | ✅ Done | ✅ Approved | def5678 | test-required: true · depends: T1 |
+
+---
+
+## Dependency Graph
+
+\`\`\`mermaid
+flowchart LR
+    T1 --> T2
+\`\`\`
+
+---
+
+## Workflow Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Workflow started** | 2026-05-18 08:00 UTC |
+| **Plan approved** | 2026-05-18 08:30 UTC |
+| **Development started** | 2026-05-18 09:00 UTC |
+| **Initial development completed** | 2026-05-18 11:45 UTC |
+| **Test hardening started** | 2026-05-18 11:50 UTC |
+| **Test hardening completed** | 2026-05-18 12:30 UTC |
+| **PR created** | 2026-05-18 12:35 UTC |
+
+### Task Metrics
+
+| Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At |
+|---------|---------|-----------|---------------|---------------|--------------|----------|
+| T1 | 2026-05-18 09:00 UTC | 2026-05-18 10:30 UTC | 1 | 0 | 2026-05-18 09:15 UTC | 2026-05-18 10:30 UTC |
+| T2 | 2026-05-18 10:35 UTC | 2026-05-18 11:45 UTC | 2 | 1 | 2026-05-18 10:45 UTC | 2026-05-18 11:45 UTC |
+EOF
+}
+
+test_canonical_tracker_populates_aggregates_and_per_task_summary() {
+    _setup_canonical_tracker
+    if ! python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null; then
+        _fail "metrics_collector exited non-zero on canonical tracker"
+        return 1
+    fi
+
+    local csv="$WF_WORKSPACE/ai/_metrics-log.csv"
+    local row
+    row="$(tail -1 "$csv")"
+    # CSV columns (per CSV_COLUMNS in metrics_collector.py):
+    #   schema_version,work_item_id,round,timestamp_utc,
+    #   cycle_time_minutes,p3_duration_minutes,p5_duration_minutes,p7_duration_minutes,
+    #   reviewer_rework_rounds,pr_review_rounds,coverage_pct,defect_escape_count,
+    #   tokens_*, mode
+    #
+    # cycle_time = 12:35 - 08:30 = 4h05 = 245 min
+    # p3_duration = 11:45 - 09:00 = 2h45 = 165 min
+    # p5_duration = 12:30 - 11:50 = 40 min
+    # reviewer_rework_rounds = 1 + 2 = 3
+    local cycle p3 p5 rework
+    cycle=$(echo "$row" | awk -F',' '{print $5}')
+    p3=$(echo "$row" | awk -F',' '{print $6}')
+    p5=$(echo "$row" | awk -F',' '{print $7}')
+    rework=$(echo "$row" | awk -F',' '{print $9}')
+
+    if [ "$cycle" != "245" ]; then
+        _fail "cycle_time_minutes expected 245; got '$cycle' (canonical layout not parsed)"
+        return 1
+    fi
+    if [ "$p3" != "165" ]; then
+        _fail "p3_duration_minutes expected 165; got '$p3'"
+        return 1
+    fi
+    if [ "$p5" != "40" ]; then
+        _fail "p5_duration_minutes expected 40; got '$p5'"
+        return 1
+    fi
+    if [ "$rework" != "3" ]; then
+        _fail "reviewer_rework_rounds expected 3; got '$rework' (Task Metrics not parsed)"
+        return 1
+    fi
+
+    if grep -q '(no task rows parsed)' "$WF_WORKFLOW_DIR/metrics-report.md"; then
+        _fail "Per-Task Summary says '(no task rows parsed)' against canonical tracker"
+        return 1
+    fi
+    if ! grep -qE '^\| T1 \|.*\| 1 \| 2026-05-18 09:00 UTC \|' "$WF_WORKFLOW_DIR/metrics-report.md"; then
+        _fail "Per-Task Summary missing merged T1 row (status + metrics)"
+        return 1
+    fi
+}
+
+# ─── Humanised metrics-report.md rendering (top-line summary, durations,
+#     human labels, phase timeline). Asserts only the report's display
+#     surface — the CSV / tracker stamp formats are unchanged contracts
+#     and remain covered by their own assertions above. ────────────────
+
+test_humanised_report_contains_summary_durations_labels_and_timeline() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    # TL;DR summary blockquote — cycle time 4h 05m (08:30 → 12:35).
+    if ! grep -qE '^> \*\*Summary\*\*: Story completed in 4h 05m' "$report"; then
+        _fail "metrics-report.md missing TL;DR '> **Summary**: Story completed in 4h 05m' line"
+        return 1
+    fi
+    # Humanised duration in the Aggregates table.
+    if ! grep -qE '\| 4h 05m \|' "$report"; then
+        _fail "metrics-report.md Aggregates missing humanised cycle time '4h 05m'"
+        return 1
+    fi
+    # Sub-hour duration formatting (p5 = 40m).
+    if ! grep -qE '\| 40m \|' "$report"; then
+        _fail "metrics-report.md Aggregates missing '40m' sub-hour duration"
+        return 1
+    fi
+    # Human label — P3 phase name.
+    if ! grep -qF 'P3 — Development' "$report"; then
+        _fail "metrics-report.md missing humanised label 'P3 — Development'"
+        return 1
+    fi
+    # Phase Timeline section + canonical header.
+    if ! grep -qE '^## Phase Timeline' "$report"; then
+        _fail "metrics-report.md missing '## Phase Timeline' section"
+        return 1
+    fi
+    if ! grep -qE '^\| Stamp \| UTC time \| Δ from start \|' "$report"; then
+        _fail "metrics-report.md Phase Timeline missing canonical header row"
+        return 1
+    fi
+    # Earliest stamp (Workflow started) has Δ = 0m.
+    if ! grep -qE '^\| Workflow started \|.*\| 0m \|' "$report"; then
+        _fail "metrics-report.md Phase Timeline missing 'Workflow started ... 0m' anchor row"
+        return 1
+    fi
+    # Missing-value reason: p7 absent → "(no review cycles)".
+    if ! grep -qF 'no review cycles' "$report"; then
+        _fail "metrics-report.md missing '(no review cycles)' reason for absent p7"
+        return 1
+    fi
+}
+
+# ─── Precondition gate — T1 (--round 0) without `PR created` stamp ──
+#     Locks the regression where premature T1 invocations silently
+#     produced empty-aggregate rows in `_metrics-log.csv`. Live symptom:
+#     `harness-2.0/ai/2026-05-22-US-023/_metrics-log.csv` had a round=0
+#     row written at 10:52 UTC while `PR created` was 11:25 UTC.
+
+test_t1_round0_without_pr_created_exits_2_no_csv() {
+    # Canonical fixture MINUS the `PR created` row — everything else is
+    # the same v2.1 markdown-table layout.
+    cat > "$WF_TRACKER_PATH" <<EOF
+# Tracker — ${WF_STORY_ID}
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T1 | repo | first | ✅ Done | ✅ Approved | abc1234 | test-required: true |
+
+## Workflow Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Plan approved** | 2026-05-18 08:30 UTC |
+| **Development started** | 2026-05-18 09:00 UTC |
+| **Test hardening completed** | 2026-05-18 12:30 UTC |
+
+### Task Metrics
+
+| Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At |
+|---------|---------|-----------|---------------|---------------|--------------|----------|
+| T1 | 2026-05-18 09:00 UTC | 2026-05-18 10:30 UTC | 1 | 0 | 2026-05-18 09:15 UTC | 2026-05-18 10:30 UTC |
+EOF
+    local rc
+    rc=$(python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null 2>&1; echo $?)
+    if [ "$rc" != "2" ]; then
+        _fail "expected exit 2 (precondition unmet — no PR created); got $rc"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKFLOW_DIR/metrics-report.error.md" ]; then
+        _fail "metrics-report.error.md not written on T1 precondition failure"
+        return 1
+    fi
+    if ! grep -qF 'PR created' "$WF_WORKFLOW_DIR/metrics-report.error.md"; then
+        _fail "error.md should name 'PR created' as the missing precondition"
+        return 1
+    fi
+    if [ -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV must NOT be appended on T1 precondition failure"
+        return 1
+    fi
+}
+
+# ─── Precondition gate — T2 (--round 1..N) without analysis report ──
+#     T2 from review-response.md should fire only when a cycle actually
+#     produced a `pr-comment-analysis-report-<n>.md`. Live symptom: a
+#     phantom round=1 row in the user's CSV with no analysis artifact.
+
+test_t2_roundN_without_analysis_report_exits_2_no_csv() {
+    _setup_canonical_tracker
+    # No pr-comment-analysis-report-*.md is written in the canonical
+    # fixture, so T2 should refuse.
+    local rc
+    rc=$(python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null 2>&1; echo $?)
+    if [ "$rc" != "2" ]; then
+        _fail "expected exit 2 (precondition unmet — no analysis report); got $rc"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKFLOW_DIR/metrics-report.error.md" ]; then
+        _fail "metrics-report.error.md not written on T2 precondition failure"
+        return 1
+    fi
+    if ! grep -qF 'pr-comment-analysis-report' "$WF_WORKFLOW_DIR/metrics-report.error.md"; then
+        _fail "error.md should name 'pr-comment-analysis-report-*.md' as the missing artifact"
+        return 1
+    fi
+    if [ -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV must NOT be appended on T2 precondition failure"
+        return 1
+    fi
+
+    # Sanity: dropping a fake analysis report into the dir lets T2 succeed.
+    touch "$WF_WORKFLOW_DIR/pr-comment-analysis-report-1.md"
+    rm -f "$WF_WORKFLOW_DIR/metrics-report.error.md"
+    if ! python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 1 >/dev/null 2>&1; then
+        _fail "T2 with analysis report present should exit 0; collector still refused"
+        return 1
+    fi
+    if [ ! -f "$WF_WORKSPACE/ai/_metrics-log.csv" ]; then
+        _fail "CSV should be appended once the precondition holds"
+        return 1
+    fi
+}
+
+# ─── Phase Summary section (new at-the-top per-phase rollup) + per-task
+#     Duration / Tokens columns + the per-task attribution caveat ──────
+
+test_phase_summary_section_renders_with_canonical_fixture() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    if ! grep -qE '^## Phase Summary' "$report"; then
+        _fail "metrics-report.md missing '## Phase Summary' section"
+        return 1
+    fi
+    if ! grep -qE '^\| Phase \| Duration \| Tokens \(in / out\) \| Cache \(read\) \|' "$report"; then
+        _fail "metrics-report.md Phase Summary missing canonical column header"
+        return 1
+    fi
+    # P1: Workflow started 08:00 → Plan approved 08:30 = 30m.
+    if ! grep -qE '^\| P1 — Requirements \| 30m \|' "$report"; then
+        _fail "Phase Summary missing P1 — Requirements row with 30m duration"
+        return 1
+    fi
+    # P3: Development started 09:00 → Initial development completed 11:45 = 2h 45m.
+    if ! grep -qE '^\| P3 — Development \| 2h 45m \|' "$report"; then
+        _fail "Phase Summary missing P3 — Development row with 2h 45m duration"
+        return 1
+    fi
+    # P5: Test hardening started 11:50 → completed 12:30 = 40m (sub-hour format).
+    if ! grep -qE '^\| P5 — Test hardening \| 40m \|' "$report"; then
+        _fail "Phase Summary missing P5 — Test hardening row with 40m duration"
+        return 1
+    fi
+    # P4 / P5.5 / P6 / P7 stamps absent in canonical fixture — those phases
+    # MUST NOT appear in the Phase Summary (partial-workflow skip rule).
+    # Scope the grep to the Phase Summary section only — the Aggregates
+    # table also uses these phase labels and would false-positive a
+    # full-report grep.
+    local phase_section
+    phase_section=$(sed -n '/^## Phase Summary/,/^## /p' "$report")
+    if echo "$phase_section" | grep -qE '^\| P4 — Approval gate \|'; then
+        _fail "Phase Summary should skip P4 — Approval gate row (no Human approval stamp in fixture)"
+        return 1
+    fi
+    if echo "$phase_section" | grep -qE '^\| P7 — Review response \|'; then
+        _fail "Phase Summary should skip P7 — Review response row (no PR review response stamp)"
+        return 1
+    fi
+    # Total = P1 (30m) + P2 (30m) + P3 (165m) + P5 (40m) = 265m = 4h 25m.
+    if ! grep -qE '^\| \*\*Total\*\* \| 4h 25m \|' "$report"; then
+        _fail "Phase Summary missing **Total** row with 4h 25m (sum of P1+P2+P3+P5)"
+        return 1
+    fi
+    # Short-phase token-attribution caveat (substring match — wording may
+    # tweak over time, but the lead-in phrase is the contract).
+    if ! grep -qF 'Short phases' "$report"; then
+        _fail "Phase Summary missing italic caveat explaining the short-phase token gap"
+        return 1
+    fi
+    # Section ordering — Phase Summary must precede Aggregates.
+    local phase_line
+    local agg_line
+    phase_line=$(grep -nE '^## Phase Summary' "$report" | head -1 | cut -d: -f1)
+    agg_line=$(grep -nE '^## Aggregates' "$report" | head -1 | cut -d: -f1)
+    if [ "$phase_line" -ge "$agg_line" ]; then
+        _fail "Phase Summary (line $phase_line) must appear before Aggregates (line $agg_line)"
+        return 1
+    fi
+}
+
+test_per_task_summary_has_duration_tokens_columns_and_caveat() {
+    _setup_canonical_tracker
+    python3 "$COLLECTOR" "$WF_WORKFLOW_DIR" --round 0 >/dev/null
+    local report="$WF_WORKFLOW_DIR/metrics-report.md"
+
+    if ! grep -qE '^\| Task \| Status \| Review Rounds \| Started \| Completed \| Duration \| Tokens \(in \+ out\) \|' "$report"; then
+        _fail "Per-Task Summary missing Duration + 'Tokens (in + out)' columns in header"
+        return 1
+    fi
+    # T1 duration = 09:00 → 10:30 = 1h 30m.
+    if ! grep -qE '\| T1 \|.*\| 1h 30m \|' "$report"; then
+        _fail "Per-Task T1 row missing '1h 30m' Duration cell"
+        return 1
+    fi
+    # T2 duration = 10:35 → 11:45 = 1h 10m.
+    if ! grep -qE '\| T2 \|.*\| 1h 10m \|' "$report"; then
+        _fail "Per-Task T2 row missing '1h 10m' Duration cell"
+        return 1
+    fi
+    if ! grep -qE '\*Per-task tokens are rough attribution' "$report"; then
+        _fail "Per-Task Summary missing italic caveat about token attribution"
         return 1
     fi
 }

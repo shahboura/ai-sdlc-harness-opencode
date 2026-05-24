@@ -101,3 +101,37 @@ Per CC-04.3, every consumer cites this file with:
 ```
 
 Inlining the marker schema or rotation rules in a consumer is a CC-04.5 drift signal.
+
+---
+
+## Stalled-Agent Recovery
+
+<!-- Extracted from orchestrator-rules.md by dev-workflow-plan.md [M-26] [IMPL-26-03]
+     Reason: US-E03-004 surgery — consolidated into recovery-protocol.md.
+     CC conventions applied: CC-02.1, CC-02.4, CC-02.5. -->
+
+An agent has **stalled** when ANY of the following is true after its SubagentStop fires:
+
+- The response text is missing the `📋 AGENT STATUS` block entirely.
+- The block is present but `Outcome` is `PARTIAL` / `FAILED` / `BLOCKED`.
+- The block is present with `Outcome: SUCCESS` but the agent's expected commits did not land (e.g. tracker shows `Files changed:` but `git log` shows no new commit on the worktree branch).
+
+When stall is detected, the orchestrator's recovery sequence is **non-negotiable**:
+
+1. **Do NOT commit on the agent's behalf.** Tests are tester-owned. Production code is developer-owned. Plan / tracker files are planner-owned. Even when a commit "looks safe", an orchestrator-authored commit corrupts the audit trail (commit author / co-author lines, the `[WIP]` prefix convention, the `Self-review:` chain). Per rule #1's last bullet, this is forbidden.
+2. **Inspect the worktree state.** If the agent left uncommitted files in the worktree, capture the file list — it goes into the re-invocation prompt verbatim.
+3. **Re-invoke the same agent** with an explicit continuation prompt:
+   ```
+   Your previous run stopped without completing the AGENT STATUS contract. Uncommitted
+   files in your worktree at <path>:
+     - <file 1>
+     - <file 2>
+   1. Review the existing files for correctness (do NOT start from scratch).
+   2. Commit them with the standard subject format (or a `[WIP]` prefix if still partial).
+   3. Emit `📋 AGENT STATUS` per agents/shared/status-schema.md.
+   You are mid-task — your goal is graceful termination of the previous run, not a fresh start.
+   ```
+4. **If the re-invocation also stalls** (rare — typically indicates a structural problem with the task), route to R-phase recovery (`/dev-workflow resume <id>`) per `commands/resume.md`. R will surface the stall to the human; the human chooses to escalate, split the task, or abort.
+5. **Never silently retry more than once.** Two stalled invocations = R-phase. Three stalled invocations = mandatory escalation.
+
+The same recovery applies whether the stall was caused by a turn-cap hit, an API error, a tool failure, or an agent refusal. The orchestrator's role is to **route** the recovery, never to **perform** it.

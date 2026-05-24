@@ -230,6 +230,7 @@ Pass all three values to downstream commands and agents.
 |---------|------|-------|-------------|
 | `requirements` | `commands/requirements.md` | 1 | Requirements Ingestion |
 | `plan` | `commands/plan.md` | 2 | Planning & Approval |
+| `quick` | `commands/quick.md` | Q | Quick Mode (fast-path: Developer + Reviewer only; no Planner/Tester per CC-05.8) |
 | `preflight` | `commands/preflight.md` | 2.5 | Branch creation (only in repos the plan named) + plan commit |
 | `develop` | `commands/develop.md` | 3 | Development Loop |
 | `approve-impl` | `commands/approve-impl.md` | 4 | Human Approval of Implementation |
@@ -240,6 +241,7 @@ Pass all three values to downstream commands and agents.
 | `reconcile` | `commands/reconcile.md` | 8 | Post-Merge Reconciliation |
 | `resume` | `commands/resume.md` | R | Workflow State Recovery |
 | `metrics` | `commands/metrics.md` | 9 | Metrics & Observability |
+| `report` | `commands/report.md` | utility | Aggregate metrics report (--since, --format md\|json, --story) |
 | `hotfix` | `commands/hotfix.md` | re-entry | Hotfix / Rollback Re-Entry |
 | `request` | `commands/handle-request.md` | inter-gate | Ad-Hoc Request Handling |
 | `migrate` | `commands/migrate.md` | utility | One-time v1.x → v2.0 workspace migration |

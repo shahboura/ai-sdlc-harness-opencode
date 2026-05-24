@@ -234,3 +234,257 @@ Per-task timestamps and counters. Same row count as the task-row sections combin
 2. Update the canonical writer (`plan-generator/SKILL.md`, `MODE: ad-hoc-tasks`, or the orchestrator-owned section as appropriate).
 3. Update every consumer (search for the old vocabulary or read the *Where used* block at the top of this file).
 4. Add a doc-grep test under `tests/skills/` so future drift fails build.
+
+---
+
+## Cross-repo contract templates
+
+Full `contracts.md` templates referenced from [`SKILL.md`](SKILL.md) → Step 2b.
+
+```markdown
+# Cross-Repo Contracts — <story-id>
+
+> Story: <story-id> · Generated: <ts> · Source: plan.md Section 2b
+
+## C1 — HTTP API
+- **Producer**: BillingService
+- **Consumer**: ApiGateway
+- **Definition**:
+  ```
+  PUT /api/v1/customers/{customerId}/subscription
+  Request:  UpdateSubscriptionRequest { PlanId: string, BillingCycle: string, ... }
+  Response: SubscriptionResponse { Id: Guid, Status: string, ... }
+  ```
+
+## C2 — Service Bus Message
+- **Producer**: BillingService
+- **Consumer**: AuthService
+- **Definition**:
+  ```
+  Topic: subscription-changed
+  Payload: SubscriptionChangedEvent { CustomerId: Guid, SubscriptionId: Guid, Action: string }
+  ```
+```
+
+**Per-contract fields:**
+
+| Field | Description |
+|-------|-------------|
+| **Contract ID** | `C<n>` — 1-based, monotonically increasing. Used as the section heading prefix (`## C1`, `## C2`, …). |
+| **Type** | `HTTP API` \| `Service Bus Message` \| `Shared DTO` — used as the section heading suffix (`## C1 — HTTP API`). |
+| **Producer** | Repo that owns/exposes the contract. One repo name from `repos-paths.md`. |
+| **Consumer** | Repo(s) that depend on the contract. Comma-separated repo names. |
+| **Definition** | Full signature: endpoint path + HTTP method + request/response DTOs, or message topic + payload schema. Use a fenced code block under the `**Definition**:` bullet. |
+
+**Consumption:** the Developer receives relevant contracts (those naming their repo as Producer or Consumer) via the CONTRACTS_CTX prompt block — the orchestrator extracts them from `contracts.md` per [`prompt-templates.md`](../dev-workflow/context/prompt-templates.md). The Reviewer reads `contracts.md` during Phase 3/6 compliance review; a mismatch is an `[S<n>]` failure with a `Contract: C<n>` annotation.
+
+**Amendments:** Phase 7 and inter-gate ad-hoc requests that touch a contract update `contracts.md` (not `plan.md`). The Planner's `MODE: ad-hoc-tasks` / `MODE: plan-amendment` paths append/edit `## C<n>` sections; the plan stub remains unchanged.
+
+---
+
+## Dependency graph rendering rules
+
+Rendering rules for the `## Dependency Graph` section — referenced from [`SKILL.md`](SKILL.md) → Step 7.
+
+1. **Direction:** `flowchart LR` — left-to-right reads as execution order (dependencies on
+   the left, dependents on the right).
+2. **Node IDs:** Replace every `-` in a Task ID with `_` for the Mermaid node ID, since
+   some renderers reject `-` in node identifiers. The display label keeps the original ID
+   verbatim. Example: `T-TEST-AuthService` → node ID `T_TEST_AuthService`, label
+   `T-TEST-AuthService: Test hardening`.
+3. **Labels:** `<Task ID>: <title>` with the title truncated to 40 characters (append `…`
+   if cut). Wrap the label in `[...]` for rectangle nodes.
+4. **Edges:** for every `depends: T<a>, T<b>...` token in the task's Notes, draw
+   `T<a> --> T<this>` and `T<b> --> T<this>`. Tasks with no `depends:` token become root
+   nodes (no incoming edges).
+5. **Implicit T-TEST edges:** every dev task `T<n>` in repo `R` MUST have an edge to
+   `T-TEST-<R>` (Phase 5 hardening cannot begin until all dev tasks in the repo are Done).
+   Render these edges explicitly even though the `depends:` token doesn't carry them — the
+   graph captures the full execution DAG, including Phase 5.
+6. **Multi-repo grouping:** if the story affects two or more repos, wrap each repo's tasks
+   in a `subgraph <RepoName>` block (use the bare repo name as the subgraph title; no
+   quotes). For single-repo stories, emit a flat graph with no `subgraph` wrapping.
+7. **No node styling:** do not emit `classDef`, `:::class` modifiers, fill colours, or
+   stroke overrides. The table holds status; the graph holds dependencies only.
+8. **Edge placement:** declare all nodes (inside subgraphs if multi-repo) first, then list
+   every edge below the subgraph blocks. Cross-subgraph edges are forbidden (cross-repo
+   dependencies are forbidden). Reject any rendering attempt that would produce a
+   cross-subgraph edge.
+
+For single-repo stories, omit the `subgraph` blocks and list nodes + edges flat.
+
+---
+
+## Full tracker template
+
+Complete tracker template referenced from [`SKILL.md`](SKILL.md) → Step 7. The Planner writes this structure when creating a new `tracker.md`.
+
+````markdown
+# Task Tracker — <Story Title> (<Story-ID>)
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T1 | AuthService | ... | ⏳ Pending | — | — | test-required: true |
+| T2 | AuthService | ... | ⏳ Pending | — | — | test-required: true · depends: T1 |
+| T3 | BillingService | ... | ⏳ Pending | — | — | test-required: false |
+| T-TEST-AuthService | AuthService | Test hardening | ⏳ Pending | — | — | Phase 5 |
+| T-TEST-BillingService | BillingService | Test hardening | ⏳ Pending | — | — | Phase 5 |
+
+**Column definitions, status enum, legal transitions, and Notes-token vocabulary are authoritative in [`tracker-schema.md`](tracker-schema.md).**
+
+Quick legend: ⏳ Pending · 🔧 In Progress · 🔄 In Review · ✅ Done
+
+---
+
+## Dependency Graph
+<!-- REQUIRED — always present; generated from task `depends:` tokens + implicit T-TEST edges -->
+
+```mermaid
+flowchart LR
+    subgraph AuthService
+        T1[T1: Add ITokenService]
+        T2[T2: Implement TokenRefreshService]
+        T_TEST_AuthService[T-TEST-AuthService: Test hardening]
+    end
+    subgraph BillingService
+        T3[T3: Wire Service Bus consumer]
+        T_TEST_BillingService[T-TEST-BillingService: Test hardening]
+    end
+    T1 --> T2
+    T1 --> T_TEST_AuthService
+    T2 --> T_TEST_AuthService
+    T3 --> T_TEST_BillingService
+```
+
+---
+
+## Repo Status
+
+| Repo | Local Path | Branch | Default Branch |
+|------|-----------|--------|----------------|
+| AuthService | /home/dev/repos/auth-service | <team>/feature/<story-id>-<slug> | main |
+| BillingService | /home/dev/repos/billing-service | <team>/feature/<story-id>-<slug> | main |
+
+*(Populated from repos-paths.md and repos-metadata.md. For single-repo stories, this table has one row.)*
+
+---
+
+## Workflow Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Workflow started** | <!-- output of: date -u +"%Y-%m-%d %H:%M UTC" --> |
+| **Plan approved** | — |
+| **Development started** | — |
+| **Initial development completed** | — |
+| **Human approval (impl)** | — |
+| **Test hardening started** | — |
+| **Test hardening completed** | — |
+| **PR created** | — |
+
+### Task Metrics
+
+| Task ID | Started | Completed | Review Rounds | Build Retries | Test Written | Green At |
+|---------|---------|-----------|---------------|---------------|--------------|----------|
+| T1 | — | — | 0 | 0 | — | — |
+| T2 | — | — | 0 | 0 | — | — |
+| T3 | — | — | 0 | 0 | — | — |
+| T-TEST-AuthService | — | — | 0 | 0 | N/A | N/A |
+| T-TEST-BillingService | — | — | 0 | 0 | N/A | N/A |
+
+---
+
+## Review History
+
+*(Populated by the orchestrator during Phase 3 whenever a Reviewer returns CHANGES_REQUESTED.
+Empty if all tasks were approved on the first pass.)*
+
+---
+🤖 Generated with [Claude Code](https://claude.ai/claude-code)
+````
+
+**Task Metrics column notes:**
+- `Test Written`: timestamp when the Tester commits the failing tests for a `test-required: true` task (filled by orchestrator after Tester AGENT STATUS parsed). Leave `—` for `test-required: false` tasks; `N/A` for T-TEST rows.
+- `Green At`: timestamp when the Developer commits passing implementation (filled by orchestrator after Developer AGENT STATUS parsed). `N/A` for T-TEST rows.
+- For single-repo stories, the Repo column still appears with one value. The `Repo Status` section has one row.
+- `T-TEST-<RepoName>` rows track Phase 5 test hardening — one per affected repo.
+
+---
+
+## Amendments (PR Review Round <N>)
+
+Template for the Amendments section written by `MODE: pr-response-tasks` — referenced from [`SKILL.md`](SKILL.md) → Phase 7 Amendment Mode.
+
+```markdown
+## Amendments (PR Review Round <N>)
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T<next-n> | <repo-name> | <≤ 60-char title> | ⏳ Pending | — | — | PR-comment: [PC-<n>] thread_id=<provider-thread-id> · test-required: <true|false> |
+```
+
+The `Notes` column **must** include the `PR-comment: [PC-<n>] thread_id=<...>` token so `review-response.md` Step 9 can post replies on the original threads. The `thread_id` value is the REST integer comment ID for inline review threads or `general:<comment-id>` for top-level PR comments (per `skills/providers/<git-provider>/pr-comments.md`).
+
+**Task ID continuation:** identify the highest existing Task ID in the original table (e.g. if the last dev task is `T5`, the first amendment task is `T6`). T-TEST-`<RepoName>` rows are not part of the dev-task sequence — amendment tasks reuse the existing T-TEST row per repo.
+
+---
+
+## Ad-hoc Tasks (Batch <N>)
+
+Template for the Ad-hoc Tasks section written by `MODE: ad-hoc-tasks` — referenced from [`SKILL.md`](SKILL.md) → Ad-Hoc Task Mode.
+
+```markdown
+## Ad-hoc Tasks (Batch <N>)
+
+| Task ID | Repo | Title | Status | Reviewer Verdict | Commit(s) | Notes |
+|---------|------|-------|--------|------------------|-----------|-------|
+| T<next-n> | <repo-name> | <≤ 60-char title> | ⏳ Pending | — | — | ad-hoc: [AHR-<n>] · source: <gate-2 | gate-3 | mid-phase> · submitted: <YYYY-MM-DD HH:MM UTC> · test-required: <true | false> |
+```
+
+The `Notes` column **must** include the `ad-hoc: [AHR-<n>]` token — the Phase 3 re-entry filter in `handle-request.md` Step 7 and the `[AHR-<n>]` counter both rely on it. Do not rename it.
+
+**Task ID continuation:** identify the highest existing Task ID across the original table, any `## Amendments (PR Review Round …)` blocks, and any prior `## Ad-hoc Tasks (Batch …)` blocks. T-TEST rows are not part of the dev-task sequence.
+
+**Batch heading:** `Batch 1` on the first ad-hoc invocation, `Batch 2` on the next. The orchestrator derives the number from the count of existing `## Ad-hoc Tasks (Batch …)` headings in the tracker, plus one.
+
+---
+
+## Plan Amendment — Ad-Hoc Round <N>
+
+Template for the plan amendment section written by `MODE: plan-amendment` — referenced from [`SKILL.md`](SKILL.md) → Plan Amendment Mode.
+
+```markdown
+## Plan Amendment — Ad-Hoc Round <N>
+
+**Triggered by**: [AHR-<n>] submitted at <YYYY-MM-DD HH:MM UTC>
+**Submission source**: <gate-2 | gate-3 | mid-phase>
+**Original classification**: <OUT_OF_SCOPE | PLAN_CONFLICT>
+**Human disposition**: Expand scope
+
+### Request
+<verbatim request text>
+
+### New requirement
+<one-paragraph statement of what the plan now covers — written as if it
+were part of the original Requirements Summary>
+
+### New acceptance criterion (if any)
+<numbered AC line(s) appended to the AC list — same shape as the original
+plan's AC section>
+
+### Plan delta
+<bulleted list of which sections of the plan are affected (Task
+breakdown, Cross-repo contracts, Test Outline, diagrams) and a brief
+description of what changes. The actual task rows are added in the
+follow-up `ad-hoc-tasks` invocation; this section records the design
+intent.>
+
+### Impact on existing tasks
+<which existing T<n> tasks, if any, must change behaviour as a result of
+this amendment. If none, write "None — amendment adds new tasks only.">
+```
+
+**Rules:**
+- Do NOT modify the original Requirements Summary, AC list, or Task breakdown table in-place.
+- The round number matches the ad-hoc batch number the amendment was raised in (derived by the orchestrator from existing amendment-section headings).
+- The amendment is gated by a scoped GATE #1 re-presentation on the delta before any tracker rows are added. Task creation happens in a subsequent `MODE: ad-hoc-tasks` invocation.

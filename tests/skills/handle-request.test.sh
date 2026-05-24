@@ -41,6 +41,7 @@ APPROVE_IMPL="$REPO_ROOT/skills/dev-workflow/commands/approve-impl.md"
 CREATE_PR="$REPO_ROOT/skills/dev-workflow/commands/create-pr.md"
 PLAN_GEN="$REPO_ROOT/skills/plan-generator/SKILL.md"
 ORCH_RULES="$REPO_ROOT/skills/dev-workflow/context/orchestrator-rules.md"
+AD_HOC_PROTO="$REPO_ROOT/skills/dev-workflow/context/ad-hoc-protocol.md"
 DEV_WORKFLOW_SKILL="$REPO_ROOT/skills/dev-workflow/SKILL.md"
 SCHEMA="$REPO_ROOT/agents/shared/status-schema.md"
 WORKFLOW_STATUS="$REPO_ROOT/skills/workflow-status/SKILL.md"
@@ -178,38 +179,36 @@ assert_contains "$PLAN_GEN" 'Ad-hoc requests completed' 'plan-generator ad-hoc-t
 assert_contains "$PLAN_GEN" '## Plan Amendment — Ad-Hoc Round <N>' 'plan-amendment names the canonical amendment heading'
 assert_contains "$PLAN_GEN" 'Do NOT touch the tracker in this mode' 'plan-amendment forbids tracker writes'
 
-# --- 6. Orchestrator rules carry the Ad-Hoc Request Handling section. ----
-assert_contains "$ORCH_RULES" '## Ad-Hoc Request Handling' 'orchestrator-rules declares the Ad-Hoc Request Handling section'
+# --- 6. Ad-hoc protocol carries the Ad-Hoc Request Handling section. ----
+# (Content moved from orchestrator-rules.md to ad-hoc-protocol.md in US-E03-004.)
+assert_contains "$AD_HOC_PROTO" '## Ad-Hoc Request Handling' 'ad-hoc-protocol declares the Ad-Hoc Request Handling section'
 assert_contains "$ORCH_RULES" 'GATE #5' 'orchestrator-rules names GATE #5'
-assert_contains "$ORCH_RULES" 'No code work without triage' 'orchestrator-rules forbids code work before triage'
-assert_contains "$ORCH_RULES" 'Out-of-scope items are never silently merged' 'orchestrator-rules forbids silent out-of-scope merges'
-assert_contains "$ORCH_RULES" 'Background agents are not preempted, killed, or paused' 'orchestrator-rules forbids preemption of in-flight agents'
+assert_contains "$AD_HOC_PROTO" 'No code work without triage' 'ad-hoc-protocol forbids code work before triage'
+assert_contains "$AD_HOC_PROTO" 'Out-of-scope items are never silently merged' 'ad-hoc-protocol forbids silent out-of-scope merges'
+assert_contains "$AD_HOC_PROTO" 'Background agents are not preempted, killed, or paused' 'ad-hoc-protocol forbids preemption of in-flight agents'
 
 # Constraint #2 mentions GATE #5 so the gate count stays in sync.
 assert_regex "$ORCH_RULES" 'Four mandatory human gates plus an inter-gate ad-hoc gate' 'orchestrator-rules constraint #2 mentions the inter-gate GATE #5'
 
-# Synchronous mid-phase handling — explicit "no queue" pinning. These are
-# also doc-drift catchers; see the note above the matching block in handle-
-# request.md for rationale.
-assert_contains "$ORCH_RULES" 'Synchronous, Non-Negotiable' 'orchestrator-rules pins the synchronous handling contract (drift catcher)'
-assert_contains "$ORCH_RULES" 'there is no orchestrator-side queue' 'orchestrator-rules eliminates the queue concept (drift catcher)'
-assert_contains "$ORCH_RULES" 'no "drain at the next safe checkpoint" hook' 'orchestrator-rules eliminates the checkpoint-drain concept (drift catcher)'
+# Synchronous mid-phase handling — explicit "no queue" pinning.
+assert_contains "$AD_HOC_PROTO" 'Synchronous, Non-Negotiable' 'ad-hoc-protocol pins the synchronous handling contract (drift catcher)'
+assert_contains "$AD_HOC_PROTO" 'there is no orchestrator-side queue' 'ad-hoc-protocol eliminates the queue concept (drift catcher)'
+assert_contains "$AD_HOC_PROTO" 'no "drain at the next safe checkpoint" hook' 'ad-hoc-protocol eliminates the checkpoint-drain concept (drift catcher)'
 
 # Failure-Mode Pinning section enumerates the three documented failure paths.
-assert_contains "$ORCH_RULES" '### Failure-Mode Pinning' 'orchestrator-rules declares the Failure-Mode Pinning section'
-assert_contains "$ORCH_RULES" '`Verdict: PLAN_NOT_FOUND`' 'orchestrator-rules pins the PLAN_NOT_FOUND failure mode'
-assert_contains "$ORCH_RULES" '`Verdict: TRIAGE_PARTIAL`' 'orchestrator-rules pins the TRIAGE_PARTIAL failure mode'
-assert_contains "$ORCH_RULES" 'Plan-amendment rejection at the scoped GATE #1' 'orchestrator-rules pins the amendment-rejection rollback'
-assert_contains "$ORCH_RULES" 'Do NOT fabricate a plan path' 'orchestrator-rules forbids fabricated plan paths'
+assert_contains "$AD_HOC_PROTO" '### Failure-Mode Pinning' 'ad-hoc-protocol declares the Failure-Mode Pinning section'
+assert_contains "$AD_HOC_PROTO" '`Verdict: PLAN_NOT_FOUND`' 'ad-hoc-protocol pins the PLAN_NOT_FOUND failure mode'
+assert_contains "$AD_HOC_PROTO" '`Verdict: TRIAGE_PARTIAL`' 'ad-hoc-protocol pins the TRIAGE_PARTIAL failure mode'
+assert_contains "$AD_HOC_PROTO" 'Plan-amendment rejection at the scoped GATE #1' 'ad-hoc-protocol pins the amendment-rejection rollback'
+assert_contains "$AD_HOC_PROTO" 'Do NOT fabricate a plan path' 'ad-hoc-protocol forbids fabricated plan paths'
 
 # Repo-Scope Inference Bounds — bounded substring-matching only, no NLP.
-assert_contains "$ORCH_RULES" '### Repo-Scope Inference Bounds' 'orchestrator-rules declares Repo-Scope Inference Bounds'
-assert_contains "$ORCH_RULES" 'substring-matching' 'orchestrator-rules permits substring-matching for repo scope'
-assert_contains "$ORCH_RULES" 'MUST NOT' 'orchestrator-rules declares prohibitions for repo-scope inference'
+assert_contains "$AD_HOC_PROTO" '### Repo-Scope Inference Bounds' 'ad-hoc-protocol declares Repo-Scope Inference Bounds'
+assert_contains "$AD_HOC_PROTO" 'substring-matching' 'ad-hoc-protocol permits substring-matching for repo scope'
+assert_contains "$ORCH_RULES" 'MUST NOT' 'orchestrator-rules declares prohibitions (constraints)'
 
-# Deferred Requests ownership — now orchestrator, not Planner (changed in the
-# round-2 review). Pin the change.
-assert_contains "$ORCH_RULES" 'is owned by the **orchestrator**' 'orchestrator-rules pins Deferred Requests ownership to the orchestrator'
+# Deferred Requests ownership — orchestrator, not Planner.
+assert_contains "$AD_HOC_PROTO" 'is owned by the **orchestrator**' 'ad-hoc-protocol pins Deferred Requests ownership to the orchestrator'
 
 # --- 7. dev-workflow SKILL.md registers the `request` command. ------------
 assert_contains "$DEV_WORKFLOW_SKILL" '| `request` |' 'dev-workflow SKILL.md commands table lists `request`'
@@ -261,7 +260,7 @@ assert_contains "$GETTING_STARTED" '/workflow-status' 'getting-started points us
 # --- 14. Round 3 critical fix C1 — concurrency model precision. -----------
 assert_contains "$HANDLE" 'Concurrency model' 'handle-request explains the concurrency model (round 3 C1 fix)'
 assert_contains "$HANDLE" 'cannot service their completion notifications' 'handle-request acknowledges deferred notification servicing'
-assert_contains "$ORCH_RULES" 'cannot *service*' 'orchestrator-rules acknowledges deferred notification servicing'
+assert_contains "$AD_HOC_PROTO" 'cannot *service*' 'ad-hoc-protocol acknowledges deferred notification servicing'
 
 # --- 15. Round 3 critical fix C2 — row-action ordering and re-render bound. -
 assert_contains "$HANDLE" 'Row-action execution order' 'handle-request pins row-action execution order'
@@ -299,9 +298,10 @@ assert_contains "$WORKFLOW_STATUS" 'joining them with ` + `' 'workflow-status jo
 assert_contains "$WORKFLOW_STATUS" 'Phase 5: Testing + Inter-gate' 'workflow-status example shows multi-valued phase output'
 
 # --- 19. Round 3 major fix M4 — ambiguous-match disambiguation. -----------
-assert_contains "$ORCH_RULES" 'Ambiguous match' 'orchestrator-rules declares the Ambiguous match state'
-assert_contains "$ORCH_RULES" 'Repo Disambiguation' 'orchestrator-rules names the disambiguation prompt'
-assert_contains "$ORCH_RULES" 'disambiguated-from:' 'orchestrator-rules records disambiguation provenance in Notes'
+# (Content in ad-hoc-protocol.md after US-E03-004 surgery.)
+assert_contains "$AD_HOC_PROTO" 'Ambiguous match' 'ad-hoc-protocol declares the Ambiguous match state'
+assert_contains "$AD_HOC_PROTO" 'Repo Disambiguation' 'ad-hoc-protocol names the disambiguation prompt'
+assert_contains "$AD_HOC_PROTO" 'disambiguated-from:' 'ad-hoc-protocol records disambiguation provenance in Notes'
 
 # --- 20. Round 3 suggestion S1 — Tracker Schema Reference page. -----------
 SCHEMA_REF="$REPO_ROOT/skills/plan-generator/tracker-schema.md"
@@ -359,9 +359,11 @@ assert_contains "$WORKFLOW_STATUS" '`## Pending Requests` section exists' 'workf
 assert_contains "$WORKFLOW_STATUS" 'Inter-gate: Ad-Hoc Request Handling (in triage)' 'workflow-status emits in-triage phase string'
 
 # --- 26. Round 4 fix M-5 — disambiguation invalid-input + cascade docs. ---
-assert_contains "$ORCH_RULES" 'Could not parse:' 'orchestrator-rules documents the disambiguation invalid-input fallback'
-assert_contains "$ORCH_RULES" 'If you pick [3] and any matched repo has no plan slice' 'orchestrator-rules warns about [3] + PLAN_NOT_FOUND cascade'
-assert_contains "$ORCH_RULES" 'Why does `[3]` cascade on PLAN_NOT_FOUND' 'orchestrator-rules explains the cascade rationale'
+# (Invalid-input fallback for the APPROVED matcher stays in orchestrator-rules.md;
+#  disambiguation-specific content moved to ad-hoc-protocol.md in US-E03-004.)
+assert_contains "$ORCH_RULES" 'Could not parse:' 'orchestrator-rules documents invalid-input fallback (APPROVED matcher)'
+assert_contains "$AD_HOC_PROTO" 'If you pick [3] and any matched repo has no plan slice' 'ad-hoc-protocol warns about [3] + PLAN_NOT_FOUND cascade'
+assert_contains "$AD_HOC_PROTO" 'Why does `[3]` cascade on PLAN_NOT_FOUND' 'ad-hoc-protocol explains the cascade rationale'
 
 # --- 27. Round 4 fix m-1 — tracker-schema is authoritative for Review Rounds. -
 assert_contains "$SCHEMA_REF" '**This file is authoritative**' 'tracker-schema Review Rounds row declares authority'

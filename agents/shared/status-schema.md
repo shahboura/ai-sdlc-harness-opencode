@@ -1,7 +1,7 @@
 # AGENT STATUS Block Schema
 
 > Owner: cross-cutting
-> Version: 1.0
+> Version: 1.1
 
 <!-- Updated by: dev-workflow-plan.md [M-01] [IMPL-01-12] (sub-steps c, d, e)
      Reason: (c) add owner + version headers per CC-04.4 / CC-04.6;
@@ -161,6 +161,14 @@ non-blocking on field shape; the doc-grep tests catch drift in the contract.
    `scripts/_agent_status_check.py`'s `_FLOOR_FIELDS_PER_AGENT` map and the
    hook test suite.
 
+## Fields explicitly NOT in this schema
+
+The following fields were considered and **permanently rejected** from `📋 AGENT STATUS`. Adding them is a schema violation rejected by `_agent_status_check.py` (exit 2).
+
+| Field | Reason for rejection | Authority |
+|---|---|---|
+| `Token-usage:` | Token capture is orchestrator-side via `PostToolUse` hook payloads. Agent self-report is unverifiable and provider-inconsistent. | ADR-002, CC-02.4.2 |
+
 ## Field-name canonical forms
 
 These are the canonical names. Renames have happened; the old names are not
@@ -207,8 +215,8 @@ fixture. The convention and this schema are now byte-aligned on the enum.
 ```yaml
 # agents/shared/status-schema.md — machine-readable contract
 # > Owner: cross-cutting
-# > Version: 1.0
-schema_version: "1.0"
+# > Version: 1.1
+schema_version: "1.1"
 universal_required:
   # Aligned with the legacy hook's actual enforcement: Agent + Next action are
   # universal; Outcome is required EXCEPT when Verdict is present (substitution
@@ -219,6 +227,9 @@ universal_required:
   # the per-role-mode list instead (where it IS canonically required).
   - Agent
   - Next action
+universal_optional:
+  # Fields any agent may include; presence is never required, absence never penalised.
+  - mode    # workflow mode: "quick" | "full" — set by orchestrator context injection; consumed by P9 metrics. ADR-002, FR-1.7.
 outcome_enum:
   - SUCCESS
   - PARTIAL

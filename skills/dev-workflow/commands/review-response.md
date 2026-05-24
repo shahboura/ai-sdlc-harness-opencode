@@ -15,22 +15,12 @@
 
 ## Prerequisites
 
-- PR(s) created (Phase 6 complete).
-- `PR created` timestamp is set in tracker.
-- If in direct phase mode, verify both the tracker and plan exist (canonical M-14 layout first; legacy fallback during the migration window):
-  ```bash
-  # Canonical (M-14 per workflow-paths.md):
-  ls ai/*-${STORY_ID}/tracker.md ai/*-${STORY_ID}/plan.md 2>/dev/null
-  # Legacy fallback (deprecated):
-  ls ai/tasks/*${STORY_ID}*.md ai/plans/*${STORY_ID}*.md 2>/dev/null
-  ```
+- PR(s) created (Phase 6 complete); `PR created` timestamp is set in tracker.
+- Tracker and plan exist (prefer canonical `ai/*-${STORY_ID}/{tracker,plan}.md`; legacy fallback during migration).
 
 ## Overview
 
-This phase ingests unresolved review comments from open PR(s), challenges each comment
-against the approved plan and acceptance criteria, and produces a findings report for the
-human. If accepted, the Planner adds new tasks to the existing tracker and the workflow
-re-enters the Phase 3 TDD development loop for those tasks only.
+Ingests unresolved PR review comments, challenges each against the approved plan and AC, presents findings for human approval. Accepted comments become new tasks; workflow re-enters Phase 3 TDD loop for those tasks only.
 
 ## Steps
 
@@ -42,45 +32,15 @@ cat .claude/context/provider-config.md
 cat .claude/context/language-config.md
 ```
 
-Locate the tracker — canonical layout first, legacy fallback:
-
-```bash
-TRACKER=$(ls -t ai/*-${STORY_ID}/tracker.md 2>/dev/null | head -1)
-[ -z "$TRACKER" ] && TRACKER=$(ls -t ai/tasks/*${STORY_ID}*.md 2>/dev/null | head -1)
-PLAN=$(ls -t ai/*-${STORY_ID}/plan.md 2>/dev/null | head -1)
-[ -z "$PLAN" ] && PLAN=$(ls -t ai/plans/*${STORY_ID}*.md 2>/dev/null | head -1)
-```
-
-Read every tracker matching the Story ID under both layouts and parse the tracker's **Repo Status** section to build a map of:
-`repo-name → { local-path, feature-branch, default-branch }`
+Locate tracker and plan (canonical `ai/*-${STORY_ID}/` first, legacy fallback). Parse **Repo Status** → `repo-name → { local-path, feature-branch, default-branch }`.
 
 ### Step 2 — Fetch PR Comments (per repo)
 
-For each affected repo, determine the git provider from `provider-config.md` and read the
-corresponding **PR review comments adapter** at
-`skills/providers/<git-provider>/pr-comments.md`. This is distinct from
-`pull-requests.md` (which covers PR creation) — the comments adapter declares the
-`pr.find_for_branch`, `pr.list_review_comments`, and `pr.reply_to_review_comment`
-capabilities used in this phase.
+For each repo, read the provider's adapter at `skills/providers/<git-provider>/pr-comments.md` (`pr.find_for_branch`, `pr.list_review_comments`, `pr.reply_to_review_comment`). If the adapter is missing, surface to human and end the phase.
 
-If `pr-comments.md` does not exist for the configured provider, surface this to the
-human and end the phase — Phase 7 cannot proceed without the primitives. (See
-`skills/providers/shared/capabilities.md` for the canonical capability list and which
-providers declare support.)
+Use adapter to: (1) find the open PR for the feature branch; (2) fetch all review threads; (3) filter to **unresolved only** (skip bots, CI checks, resolved threads).
 
-Use the adapter to:
-1. Look up the open PR/MR for the repo's feature branch (`pr.find_for_branch`).
-2. Fetch all review threads / comment threads (`pr.list_review_comments`).
-3. Filter to **unresolved threads only** — skip automated bot comments, CI check summaries,
-   and already-resolved threads. The adapter declares its own bot-filter starter list;
-   apply it client-side.
-
-Collect for each unresolved comment:
-- A sequential ID: `[PC-<n>]` (globally numbered across all repos, starting at 1)
-- Repo name
-- File path and line number (or `"general"` if not inline)
-- Comment author and body text
-- Thread ID (provider-native identifier used to post replies — persisted into the tracker in Step 7; do NOT rely on in-memory state)
+Collect per unresolved comment: sequential `[PC-<n>]` ID, repo name, file+line (or `"general"`), author, body text, thread ID (persisted to tracker in Step 7 — do NOT rely on in-memory state).
 
 **If no unresolved comments are found across all repos:**
 
@@ -98,59 +58,25 @@ Wait for the human's response. If [2], end the phase without updating metrics.
 
 ### Step 3 — Reviewer: Challenge Comments Against Plan and AC
 
-For each repo that has unresolved comments, invoke `@ai-sdlc-reviewer` with
-`mode: pr-comment-analysis` and `run_in_background: true`
-(name: `reviewer-prcomment-<repo-name>`):
+For each repo with unresolved comments, invoke `@ai-sdlc-reviewer` (`mode: pr-comment-analysis`, `run_in_background: true`, name: `reviewer-prcomment-<repo-name>`):
 
 ```
 @ai-sdlc-reviewer Analyse PR review comments for Story $ARGUMENTS.
-
 MODE: pr-comment-analysis
-
-[Include LANGUAGE_CTX — reviewer role: include build-cmd, test-cmd; omit format-cmd]
-(Templates: ../context/prompt-templates.md)
-
-REVIEW CONTEXT:
-- Repo: <repo-name>
-- Repo path: <local repo path>
-- Feature branch: <team-name>/feature/<id>-<slug>
-- Default branch: <main | master>
-- Plan path: <ai/plans/...>
-- Story ID: #<STORY-ID>
-
-PR COMMENTS TO ANALYSE:
-[PC-<n>] Repo: <repo-name> | File: <file-path>:<line> (or "general") | Author: <author>
-         <comment body text>
-
-[PC-<m>] ...
-
-Classify each comment and produce the PR Comment Analysis Report.
-See agents/reviewer/index.md for the pr-comment-analysis mode instructions and report format.
+[Include LANGUAGE_CTX — build-cmd, test-cmd; omit format-cmd]
+REVIEW CONTEXT: Repo, Repo path, Feature branch, Default branch, Plan path, Story ID
+PR COMMENTS TO ANALYSE: [PC-<n>] Repo | File:line | Author | <body> ...
+Classify each and produce the PR Comment Analysis Report (see agents/reviewer/index.md).
 ```
 
-**Launch all repo reviewers in a single message** (parallel via `run_in_background: true`).
-Wait for all to complete.
+**Launch all repo reviewers in a single message.** Wait for all to complete.
 
 ### Step 4 — Merge Multi-Repo Reports
 
-If multiple repos had comments, collect all PR Comment Analysis Reports. Present them
-together, clearly separated by repo, with a merged summary count at the top:
+Collect all reports, separated by repo, with merged summary at the top:
+`Total across all repos — Valid: N | Invalid: N | Partial: N`
 
-```
-Total across all repos — Valid: N | Invalid: N | Partial: N
-```
-
-**Verdict handling per repo report:**
-
-Parse the `Verdict:` and `Unclassified:` lines from each sub-report's AGENT STATUS block.
-
-- `Verdict: ANALYSIS_COMPLETE` — no special action; include the report as-is in the merged
-  output.
-- `Verdict: ANALYSIS_PARTIAL` — prepend an `## Unclassified Comments` block at the top of
-  the merged output naming each repo with a non-zero `Unclassified:` count. The human at
-  GATE #4 must decide whether to re-fetch, skip, or accept the partial classification.
-- `Verdict: PLAN_NOT_FOUND` — this is `Outcome: FAILED`. Surface as a hard error per
-  `orchestrator-rules.md` error handling. Do not proceed to Step 5 — escalate to the human.
+Verdict routing: `ANALYSIS_COMPLETE` → include as-is. `ANALYSIS_PARTIAL` → prepend `## Unclassified Comments` block (human at GATE #4 decides). `PLAN_NOT_FOUND` → hard error; escalate, do not proceed to Step 5.
 
 ### Step 5 — Present PR Comment Analysis Report to Human (GATE #4)
 
@@ -174,183 +100,87 @@ What would you like to do?
 
 ### Step 6 — Handle Human Response
 
-**Option [1] — Accept all:**
-Collect every `[PC-<n>]` classified `VALID` or `PARTIAL`. Proceed to Step 7.
-
-**Option [2] — Accept selected:**
-Parse the human's list (e.g., `"PC-1, PC-3"`). Proceed to Step 7 with only those comments.
-
-**Option [3] — Override:**
-Capture the human's reclassification reasoning. Re-invoke the relevant Reviewer(s) in
-`pr-comment-analysis` mode (foreground, targeted to the specified comments) with the
-human's reasoning appended as additional context. Re-present Step 5 with the updated report.
-
-**Option [4] — No action:**
-Record `PR review response: skipped` in the Workflow Metrics table. End this phase —
-no tasks are created, no commits made.
+- **[1] Accept all:** Collect every `VALID`/`PARTIAL` `[PC-<n>]`. Proceed to Step 7.
+- **[2] Accept selected:** Parse human's list; proceed to Step 7 with only those.
+- **[3] Override:** Re-invoke Reviewer(s) with human's reasoning; re-present Step 5.
+- **[4] No action:** Record `PR review response: skipped` in Workflow Metrics. End phase.
 
 ### Step 7 — Planner: Add New Tasks to Existing Tracker
 
-Collect the accepted `[PC-<n>]` comments along with the Reviewer's proposed task outlines.
-
-Invoke `@ai-sdlc-planner` (foreground) with the existing tracker and plan. The Planner's
-behaviour in this mode is documented in `skills/plan-generator/SKILL.md` under
-**Phase 7 Amendment Mode** — the prompt below sets the orchestrator-side context
-the skill needs (paths, story ID, accepted comments, round number); the skill
-handles the row template, dependency-graph regeneration, and the no-reorder /
-no-remove invariant on existing rows.
+Invoke `@ai-sdlc-planner` (foreground). Behaviour documented in `skills/plan-generator/SKILL.md` → **Phase 7 Amendment Mode**:
 
 ```
 @ai-sdlc-planner Add new PR-response tasks to the existing tracker for Story $ARGUMENTS.
-
 MODE: pr-response-tasks
-
 CONTEXT:
-- Tracker path: <ai/tasks/<existing-tracker-filename>>
-- Plan path: <ai/plans/<existing-plan-filename>>
-- Story ID: #<STORY-ID>
-- Round: <N>   # 1 on the first Phase 7 invocation for this story, 2 on a second
-               # round of PR comments, etc. Derived by the orchestrator from
-               # the count of existing `## Amendments (PR Review Round …)`
-               # headings in the tracker, plus one.
+- Tracker path: <workflow_dir>/tracker.md
+- Plan path: <workflow_dir>/plan.md
+- Test-outline path: <workflow_dir>/test-outline.md
+- Story ID: $ARGUMENTS
+- Round: <N>
+  (Round = count of existing `## Amendments (PR Review Round …)` headings + 1)
 
 ACCEPTED PR COMMENTS TO ADDRESS:
-[PC-<n>] Repo: <repo-name> | File: <file-path>:<line>
-Reviewer classification: VALID | PARTIAL
-Reviewer reasoning: <from analysis report>
-Proposed task: <one-sentence description from Reviewer>
-
+[PC-<n>] Repo | File:line | Classification | Reviewer reasoning | Proposed task
 [PC-<m>] ...
 
 Instructions:
-1. Read the existing tracker and plan.
-2. Identify the highest existing Task ID (e.g., if last task is T5, next is T6).
-3. For EACH accepted PC comment, add ONE new task row to the tracker:
-   - Task ID: T<next-n>
-   - Repo: <repo-name from the PC comment>
-   - Title: <concise title ≤ 60 chars derived from the proposed task>
-   - Status: ⏳ Pending
-   - Reviewer Verdict: —
-   - Commit(s): —
-   - Notes: PR-comment: [PC-<n>] thread_id=<provider-thread-id> | test-required: true
-4. Add a Test Outline section for each new task to the PLAN document, following the same
-   format and naming convention as the original Test Outline (Subject_Scenario_Outcome).
-   Base the test names on the Reviewer's proposed task description.
-5. **Regenerate the tracker's `## Dependency Graph` section** to include the new tasks.
-   Follow the rendering rules in `plan-generator/SKILL.md` → *Dependency Graph rendering
-   rules*. PR-response tasks typically have no `depends:` token (they originate from PR
-   feedback, not the original DAG), so they appear as root nodes that flow into their
-   repo's `T-TEST-<RepoName>` node via the implicit Phase 5 edge. If a PR-response task's
-   Notes contains an explicit `depends:` token (rare — only when the human edits it during
-   the Phase 7 gate), honour it.
-6. Update the Workflow Metrics table: add `PR review response started | <timestamp>`.
-7. Save the updated tracker and plan files. Verify each by reading them back.
+1. Read tracker, plan, and test-outline. Find highest Task ID.
+2. For EACH accepted PC comment, add one task row under `## Amendments (PR Review Round <N>)` in the tracker:
+   Notes: PR-comment: [PC-<n>] thread_id=<id> | test-required: true
+3. Append a `## Test Outline — PR Review Round <N>` section to **`test-outline.md`** (NOT plan.md), with one `## T<n>: …` block per new task (Subject_Scenario_Outcome convention). Keep the file in lock-step with the new tracker rows.
+4. Regenerate `## Dependency Graph` (new tasks as root nodes → T-TEST-<RepoName>).
+5. Add `PR review response started | <timestamp>` to Workflow Metrics.
+6. Save and verify tracker and test-outline.
 ```
 
-Parse the Planner's `📋 AGENT STATUS`. If `Outcome: PARTIAL` or `FAILED`, follow the
-error handling rules in `orchestrator-rules.md`.
-
-After confirmed `Outcome: SUCCESS`, record `PR review response started` in orchestrator state.
+On `Outcome: PARTIAL`/`FAILED` follow `orchestrator-rules.md` error handling. On `SUCCESS`, record `PR review response started`.
 
 ### Step 8 — Re-Enter TDD Development Loop
 
-Read and execute `commands/develop.md`, applying the following scope filter before starting:
+Read and execute `commands/develop.md`.
 
 > **Only process task rows that live under a `## Amendments (PR Review Round <N>)` heading AND have `Status: ⏳ Pending`.**
 
-The filter is **section-based**, not content-based. Pre-C3 it matched on `Notes contains \`PR-comment:\``, which worked only because the `PR-comment:` token happened to be unique to Amendments rows by convention (per `tracker-schema.md` → *Notes column tokens*) — a future change that allowed the token in any other section would silently widen the filter. Section-based matching is the durable signal: the `## Amendments (PR Review Round <N>)` heading is the canonical owner of Phase 7 tasks, and the orchestrator already needs to know which round it's on to derive `Round: <N>` for the Planner invocation in Step 7.
+The filter is **section-based**, not content-based (pre-C3 it matched `Notes contains \`PR-comment:\`` — section-based is the durable signal).
 
-All Phase 3 rules apply unchanged:
-- TDD path for `test-required: true` tasks (Tester → Developer → Reviewer)
-- Direct path for `test-required: false` tasks (Developer → Reviewer)
-- Worktree isolation per task
-- Sequential execution within each repo
-- Parallel execution across repos (via `run_in_background: true`)
-- Squash-merge on Reviewer approval
+All Phase 3 rules apply (TDD/direct paths, worktree isolation, sequential within repo, parallel across repos, squash-merge on approval).
 
-After all new tasks are ✅ Done across all repos, proceed to Step 8b.
+After all new tasks are ✅ Done, proceed to Step 8b.
 
 ### Step 8b — Re-trigger Phase 5 hardening on affected repos
 
-Phase 7 amendments reuse the existing `T-TEST-<RepoName>` row (per
-`plan-generator/SKILL.md` → *Phase 7 Amendment Mode*). The original Phase 5
-hardening ran against the original code and is recorded as ✅ Done — but new
-amendment production code has now landed on the feature branch and the 90%
-coverage gate has never been checked against the union. Without this step,
-amendments ship in the PR without coverage enforcement.
+Phase 7 amendments land new production code that has never been through the 90% coverage gate. For each repo where this batch added at least one task, check `T-TEST-<RepoName>` Status:
 
-For each repo where this Phase 7 batch added at least one task, read the
-`T-TEST-<RepoName>` row's Status:
+- **`Status: ✅ Done`** → re-trigger:
+  1. Set `T-TEST-<RepoName>` → `🔧 In Progress` (legal `✅ Done → 🔧 In Progress` per `tracker-schema.md`; overwrites `Started` timestamp on T-TEST row — original Phase 5 start is preserved in `Test hardening started` Workflow Metrics).
+  2. Invoke `commands/test.md` Step 1 (auto-harden Tester) and Step 2 (Reviewer) for this repo.
+  3. On Reviewer `APPROVED` → set `T-TEST-<RepoName>` → `✅ Done`, stamp `Completed`.
+  4. On Reviewer `CHANGES_REQUESTED` → loop per standard Phase 5 handling.
 
-- **`Status: ✅ Done`** → re-trigger Phase 5 hardening on this repo:
-  1. Set `T-TEST-<RepoName>` → `🔧 In Progress` (legal `✅ Done → 🔧 In Progress`
-     transition per `tracker-schema.md`; the `tracker-transition-guard` hook
-     accepts it as a "rework" transition). Per the universal orchestrator rule
-     "Set task `Started` (Task Metrics) when marking a task 🔧 In Progress"
-     (`orchestrator-rules.md` → rule #3), this transition **also overwrites the
-     original Phase 5 `Started` timestamp** on the T-TEST row. Both `Started`
-     and `Completed` on the row reflect the most recent hardening pass; the
-     audit trail of "when did the *first* Phase 5 run start" is lost from the
-     T-TEST row but preserved via `Test hardening started` in the Workflow
-     Metrics table (which is NOT overwritten — see the workflow-metrics
-     non-update paragraph below).
-  2. Invoke `commands/test.md` Step 1 (auto-harden Tester) and Step 2 (Reviewer)
-     for this repo, following the exact same loop as the original Phase 5 run.
-  3. On Reviewer `APPROVED` → set `T-TEST-<RepoName>` → `✅ Done`, set
-     `Reviewer Verdict` to ✅ Approved, set `Completed` in Task Metrics to the
-     current UTC timestamp (overwrites the original Phase 5 completion stamp
-     for this T-TEST row — the row records the most recent hardening pass).
-  4. On Reviewer `CHANGES_REQUESTED` → loop per the standard Phase 5 handling
-     (relay all `[T<n>]`, `[S<n>]`, and any `[R<n>]` comments to the Tester;
-     T-TEST stays `🔧 In Progress` until the Tester returns SUCCESS and the
-     Reviewer approves on the next round).
+- **`Status` is anything else** → Phase 5 hasn't completed; upcoming run will include the amendment code. Skip.
 
-- **`Status` is anything else** → the upcoming or in-flight Phase 5 will
-  naturally cover the new amendment code when it runs. Do not re-trigger.
-  This case is rare (it implies the workflow resumed mid-Phase-5 or the
-  amendment landed before the original Phase 5 completed), but the guard
-  prevents a redundant re-trigger and an illegal transition.
-
-Multiple repos may be re-triggered in parallel via `run_in_background: true`
-per the standard Phase 5 parallel-hardening pattern. Sequential within each
-repo — at most one in-flight Tester or Reviewer per repo.
+Multiple repos re-triggered in parallel (`run_in_background: true`). Sequential within each repo.
 
 The Workflow Metrics `Test hardening started` / `Test hardening completed`
-timestamps are NOT re-set by this step — they record Phase 5's first run, and
-Phase 7's re-trigger is tracked by the per-row `Completed` Task Metric on
-`T-TEST-<RepoName>` and the `PR review response completed` metric. Re-stamping
-the Phase 5 metrics would fragment the audit trail across phases.
+timestamps are NOT re-set by this step — they record Phase 5's first run, and Phase 7's re-trigger is recorded by `PR review response completed`.
 
 After every re-triggered `T-TEST-<RepoName>` returns to ✅ Done, proceed to Step 9.
 
 ### Step 9 — Record Completion and Offer PR Replies
 
-Update the tracker Workflow Metrics: set `PR review response completed` to
-`date -u +"%Y-%m-%d %H:%M UTC"`.
+Update Workflow Metrics: set `PR review response completed` to `date -u +"%Y-%m-%d %H:%M UTC"`.
 
-Create a **new tracker-update commit** on top of the Phase 7 task commits. **Do NOT amend.**
-By this point, HEAD is the most recent Phase 7 task squash-merge — not the Phase 6 tracker
-commit — so `git commit --amend` would silently rewrite a task commit's tree with tracker
-content. A new commit also keeps the tracker's recorded squash-merge SHAs accurate (an
-amend that autosquashes back into the Phase 6 tracker commit would rewrite the SHAs of
-every Phase 7 task commit above it, making the values just recorded in the tracker stale).
+Create a **new tracker-update commit** — **Do NOT amend** (HEAD is a Phase 7 task squash, not the Phase 6 tracker commit).
 
-First, determine whether the workspace is itself a git repository:
-
+Determine whether workspace is a git repo:
 ```bash
 git -C ai/<YYYY-MM-DD>-<work-item-id>/ rev-parse --is-inside-work-tree 2>/dev/null
 ```
 
-**If the workspace IS a git repo** (exits 0 — workspace == repo, single-repo case):
+**If the workspace IS a git repo**
 
-Stage both `ai/tasks/` and `ai/plans/`. The plan is included for the same reason as in the
-workspace-not-a-git-repo branch below: a Phase 7 batch may have arrived via `[a] Expand scope`
-and run `MODE: plan-amendment`, which appends a `## Plan Amendment — Ad-Hoc Round <N>`
-section to the workspace plan file. Without staging the plan, the amendment stays
-uncommitted on the feature branch — the tracker references plan content that the repo's
-committed plan file does not contain. If the plan was unchanged this round, staging
-`ai/<YYYY-MM-DD>-<work-item-id>/` includes the plan file as a no-op (Git skips byte-
-identical files) and the commit lands with only the tracker delta.
+Stage and commit the per-workflow dir (plan included — a Phase 7 `[a] Expand scope` may have appended a `## Plan Amendment — Ad-Hoc Round <N>` section; staging the dir is a no-op if the plan is unchanged):
 
 ```bash
 git add ai/<YYYY-MM-DD>-<work-item-id>/
@@ -363,28 +193,14 @@ EOF
 git push origin <feature-branch>
 ```
 
-**If the workspace is NOT a git repo** (tracker was copied into the repo in Phase 6 Step 6):
+**If the workspace is NOT a git repo**
 
-Sync the updated tracker **and the plan** back into each affected repo using the
-**Read + Write** tools (not `cp` — the `bash-write-guard` hook blocks Bash writes
-to `ai/` paths). The plan is included because a Phase 7 batch may have arrived via
-the inter-gate ad-hoc flow's `[a] Expand scope` path, which invokes
-`MODE: plan-amendment` and appends a `## Plan Amendment — Ad-Hoc Round <N>`
-section to the workspace plan file. Without re-syncing the plan, the per-repo copy
-committed in Phase 6 would stay frozen at the pre-amendment state and the next
-holistic review (or any human looking at the merged PR) would see a tracker
-referring to a plan section that doesn't exist in the repo:
+Sync tracker **and plan** into each affected repo via Read+Write tools (not `cp` — `bash-write-guard` blocks Bash writes to `ai/`). Plan sync required because a `MODE: plan-amendment` via `[a] Expand scope` appends to the workspace plan; without re-sync the per-repo copy stays frozen at pre-amendment state:
 
 - Read `ai/<YYYY-MM-DD>-<work-item-id>/tracker.md` (workspace) → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/tracker.md`
 - Read `ai/<YYYY-MM-DD>-<work-item-id>/plan.md` (workspace)    → Write to `<REPO_PATH>/ai/<YYYY-MM-DD>-<work-item-id>/plan.md`
 
-If the workspace plan file's mtime is unchanged since the last sync (Phase 6 Step 6
-or a prior Phase 7 Step 9), the Write call is a no-op on content; skipping the read
-is a valid optimisation but not required — the cost of an extra Read+Write is
-trivial compared to the cost of a missed amendment, and the no-op write doesn't
-dirty the working tree (Git's `add` ignores byte-identical files).
-
-Then commit and push from the repo:
+Then commit and push:
 
 ```bash
 git -C "<REPO_PATH>" add ai/<YYYY-MM-DD>-<work-item-id>/
@@ -397,11 +213,7 @@ EOF
 git -C "<REPO_PATH>" push origin <feature-branch>
 ```
 
-Both pushes are fast-forward (a new commit on top of the remote's tip), so
-`--force-with-lease` is not required. If the plan was unchanged this round, the
-commit's tree has no plan delta and staging `ai/<YYYY-MM-DD>-<work-item-id>/`
-includes the plan file as a no-op — the commit still lands cleanly because the
-tracker delta is independent.
+(If the plan was not amended this round — no `Plan Amendment — Ad-Hoc Round` section was appended — staging the dir is a no-op for the plan file; the commit still lands via the tracker delta.)
 
 Present to the human:
 
@@ -429,11 +241,20 @@ session memory — so this step is safe to run even after a session interruption
 
 ### Step 10 — T2 Metrics Collection
 
-Per the P9 metrics-collector contract (`skills/metrics-collector/SKILL.md`),
-P7 triggers metrics aggregation at **T2** with `--round <n>` at the end of
-each review cycle (1-indexed: first review round is `--round 1`, second is
-`--round 2`, etc.). Use the same workflow directory the rest of P7
-operates against.
+**Precondition guard (NON-NEGOTIABLE):** T2 is only meaningful when this
+cycle actually produced a comment-analysis report. Verify before invoking:
+
+```bash
+ls "ai/<YYYY-MM-DD>-<work-item-id>"/pr-comment-analysis-report-*.md >/dev/null 2>&1 \
+  || { echo "Step 10 skipped: no pr-comment-analysis-report-*.md in workflow dir (T2 has no trigger source)" >&2; exit 0; }
+```
+
+If no analysis report exists in the workflow dir, **skip the metrics
+invocation** — firing T2 here would record a phantom row in
+`_metrics-log.csv` with empty `p7_duration_minutes` (the symptom this
+guard exists to prevent). The Step 2 early-exit at "no unresolved
+comments" already covers most paths; this Step 10 guard is the
+defence-in-depth check.
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
@@ -441,27 +262,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/metrics_collector.py" \
     --round <n>
 ```
 
-The round number for this invocation equals the count of distinct
-`pr-comment-analysis-report-*.md` files in the workflow directory after the
-current cycle's analysis was written. The aggregator computes
-`p7_duration_minutes` from `PR created` → `PR review response completed`,
-and `pr_review_rounds` from the file count itself.
-
-Exit semantics match T1: `0` success, `1` validation failure with
-`.error.md` sibling, `2` precondition unmet. On non-zero, surface
-`.error.md` to the human but do not abort P7 — the response loop has
-already completed; the metrics row is a non-blocking observation.
+Round = count of distinct `pr-comment-analysis-report-*.md` files in the workflow dir after this cycle's analysis was written. Aggregator computes `p7_duration_minutes` (`PR created` → `PR review response completed`) and `pr_review_rounds`. Exit: `0` success, `1` validation failure (surface `.error.md`), `2` precondition unmet (including "no analysis report"). Non-zero does not abort P7 — metrics are non-blocking.
 
 ---
 
 ## Re-Entry
 
-Phase 7 can be run multiple times for the same PR (e.g., a second round of reviewer
-feedback). Each invocation discovers newly unresolved threads, creates a fresh batch of
-`PR-comment:` tasks, and runs the dev loop for those tasks only. Prior PR-response tasks
-remain Done and are not re-processed.
+Phase 7 can run multiple times (each discovers newly unresolved threads, creates a fresh `PR-comment:` task batch, runs the dev loop for those tasks only — prior tasks stay Done).
 
 ## Single-Repo Backward Compatibility
 
-If only one repo is affected, this behaves identically — one Reviewer analysis, one human
-gate, one Planner invocation, one sequential dev loop.
+Single-repo behaves identically — one Reviewer, one gate, one Planner, one dev loop.

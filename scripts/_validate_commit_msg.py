@@ -32,6 +32,9 @@ Autosq.:  fixup!|squash!|amend!|reword! <subject>  (Phase 6 autosquash)
 Body must include the trailer:
     Co-Authored-By: Claude Code <noreply@anthropic.com>
 
+Quick-mode commits must also include:
+    Quick-Mode: true
+
 Story-ID examples: 123456 (numeric), PROJ-123 (Jira), auth.feature (slug).
 Task-ID  examples: T1, T2, T-TEST-AuthService.
 """

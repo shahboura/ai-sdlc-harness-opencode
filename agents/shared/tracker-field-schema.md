@@ -1,7 +1,7 @@
 # Tracker Field Schema
 
 > Owner: cross-cutting
-> Version: 1.0
+> Version: 1.1
 
 <!-- Created by: dev-workflow-plan.md [M-01] [IMPL-01-10]
      Reason: Canonical tracker field names + format strings — consumed by P9 metrics-collector + every agent reading the tracker.
@@ -23,6 +23,7 @@ Canonical schema for `tracker.md` — declares every header field, metric-block 
 | `Max Build Retries:` | `<int>` | P0 default; per-story override | Per CC-09 default 3 |
 | `Hotfix-Of:` | `<parent-story-id>` *(optional)* | P0 hotfix entry | Set only by M-19 `/dev-workflow hotfix` |
 | `Workflow-Dir:` | `ai/<YYYY-MM-DD>-<id>/` | P1 ingest | Canonical per-workflow directory (per CC-05.7) |
+| `Mode:` | `quick \| full` *(optional — absent = full)* | Orchestrator at Q-phase entry (quick) or P3 entry (full, explicit) | Workflow-mode marker per FR-1.7; consumed by P9 metrics-collector for the `_metrics-log.csv` `mode` column. `full` may be omitted on pre-v2.1 trackers — readers treat absent as `full`. |
 
 ## Metric stamps (timestamp lines)
 

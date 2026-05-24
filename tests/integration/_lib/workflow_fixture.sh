@@ -46,8 +46,18 @@
 #
 #   wf_write_plan
 #       Writes a minimal canonical plan.md with the required sections
-#       (Story metadata, Affected repos, Approach, Test Outline, Class
-#       diagram, Flow chart, Sequence diagram, Risk/assumptions, Attribution).
+#       (Story metadata, Affected repos, Approach, Test Outline stub,
+#       Class diagram, Flow chart, Sequence diagram, Risk/assumptions,
+#       Attribution). The per-task Test Outline content lives in the
+#       sibling file written by `wf_write_test_outline` — plan.md carries
+#       only a `## Test Outline → see test-outline.md` pointer.
+#
+#   wf_write_test_outline
+#       Writes a minimal canonical test-outline.md sibling to plan.md.
+#       Per dev-workflow-phase-specs.md § Phase 2 (Test outline — separable),
+#       the file is a standalone P2 output keyed off the same workflow
+#       directory; consumers (Tester auto-tdd, Tester auto-harden, Reviewer
+#       Phase A) read it directly rather than scraping plan.md.
 #
 #   wf_stamp_metric <metric_name> [timestamp]
 #       Appends a `<metric_name>: <timestamp>` line under the Workflow
@@ -85,6 +95,7 @@ WF_REPO_PATH=""
 WF_WORKFLOW_DIR=""
 WF_TRACKER_PATH=""
 WF_PLAN_PATH=""
+WF_TEST_OUTLINE_PATH=""
 WF_TODAY=""
 WF_STORY_ID=""
 WF_PROVIDER=""
@@ -116,6 +127,7 @@ wf_setup() {
     WF_WORKFLOW_DIR="$WF_WORKSPACE/ai/${WF_TODAY}-${story_id}"
     WF_TRACKER_PATH="$WF_WORKFLOW_DIR/tracker.md"
     WF_PLAN_PATH="$WF_WORKFLOW_DIR/plan.md"
+    WF_TEST_OUTLINE_PATH="$WF_WORKFLOW_DIR/test-outline.md"
 
     mkdir -p "$WF_WORKSPACE/.claude/context" "$WF_WORKFLOW_DIR"
     _wf_write_provider_config
@@ -140,13 +152,14 @@ wf_setup() {
 
 # ─── Accessors ───────────────────────────────────────────────────────────────
 
-wf_workspace()    { printf '%s' "$WF_WORKSPACE"; }
-wf_repo_path()    { printf '%s' "$WF_REPO_PATH"; }
-wf_workflow_dir() { printf '%s' "$WF_WORKFLOW_DIR"; }
-wf_tracker_path() { printf '%s' "$WF_TRACKER_PATH"; }
-wf_plan_path()    { printf '%s' "$WF_PLAN_PATH"; }
-wf_today()        { printf '%s' "$WF_TODAY"; }
-wf_story_id()     { printf '%s' "$WF_STORY_ID"; }
+wf_workspace()         { printf '%s' "$WF_WORKSPACE"; }
+wf_repo_path()         { printf '%s' "$WF_REPO_PATH"; }
+wf_workflow_dir()      { printf '%s' "$WF_WORKFLOW_DIR"; }
+wf_tracker_path()      { printf '%s' "$WF_TRACKER_PATH"; }
+wf_plan_path()         { printf '%s' "$WF_PLAN_PATH"; }
+wf_test_outline_path() { printf '%s' "$WF_TEST_OUTLINE_PATH"; }
+wf_today()             { printf '%s' "$WF_TODAY"; }
+wf_story_id()          { printf '%s' "$WF_STORY_ID"; }
 
 # ─── Private writers (called by wf_setup) ────────────────────────────────────
 
@@ -244,9 +257,8 @@ A fixture story used by integration tests.
 ## Approach
 Sample plan content for fixture composition.
 
-## Test Outline
-### T1: example task 1
-- test_seed_remains_present
+## Test Outline → see test-outline.md
+> The per-task test list lives in [\`test-outline.md\`](test-outline.md) (sibling file). Approve both at GATE #1.
 
 ## Class Diagram
 \`\`\`mermaid
@@ -271,6 +283,21 @@ sequenceDiagram
 
 ## Risk/Assumptions
 None — fixture only.
+
+🤖 Generated with [Claude Code](https://claude.ai/claude-code)
+EOF
+}
+
+wf_write_test_outline() {
+    cat > "$WF_TEST_OUTLINE_PATH" <<EOF
+# Test Outline — ${WF_STORY_ID}
+
+> Authoritative reference: [workflow-paths](../../../skills/dev-workflow/context/workflow-paths.md)
+> Companion plan: \`plan.md\` (sibling)
+
+## T1: example task 1
+\`test-required: true\`
+- test_seed_remains_present — fixture-only smoke
 
 🤖 Generated with [Claude Code](https://claude.ai/claude-code)
 EOF
