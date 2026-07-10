@@ -4,6 +4,23 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ---
 
+## [Unreleased]
+
+- Fixed a guard-layer confinement gap: on a workspace (or a registered repo)
+  that itself lives under `/tmp` — the default on Linux, and common in
+  CI/container/sandbox setups — the blanket "`/tmp` is scratch space"
+  allowance could swallow the workspace or repo's own directory tree,
+  silently defeating the developer's repo/worktree confinement, the
+  reviewer's read-only guarantee, and the planner's repo-source immunity.
+  Scratch is now recognized only when a write target falls outside both the
+  confined workspace and every registered repo, regardless of where either
+  happens to sit on disk.
+- Fixed a related regression (caught by adversarial review before it
+  shipped): a multi-repo workspace — two or more repos registered under one
+  shared parent directory, the layout `/add-repo` produces — could wrongly
+  block writes into every registered repo except whichever was listed first
+  in `repos.yaml`.
+
 ## [3.0.0] — 2026-07-08
 
 > **The ground-up rewrite.** Almost all of the v2.x line's accumulated complexity compensated for one root cause: orchestration logic lived in markdown prose an LLM had to faithfully execute every run, with hooks bolted on to catch the cases where it didn't. v3.0 replaces that with a **declared-data pipeline enforced by a Python core** — every mechanical rule moves into code that just runs, and the model is reserved for judgment. This is a breaking change; `/migrate-workspace` adopts an existing v2.x workspace (config carries over — run history stays archived in place).

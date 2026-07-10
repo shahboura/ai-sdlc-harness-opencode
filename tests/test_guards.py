@@ -295,6 +295,28 @@ class BashGuard(GuardHarness):
         self.assert_allows("bash", bash("go build ./... 2>&1", rev))
         self.assert_allows("bash", bash("pytest > /dev/null", rev))
 
+    def test_reviewer_scratch_excludes_a_registered_repo_checkout_under_tmp(self):
+        # Adversarial-review finding (second pass, on this very fix): the
+        # first draft's /tmp-scratch fix excluded only the WORKSPACE's own
+        # tree, not registered repos — so a repo checked out as a SIBLING
+        # under /tmp (independent of the workspace; `_registered_repos`
+        # finds repos VIA repos.yaml, never assumes they live under the
+        # workspace) was still waved through as scratch, letting a
+        # nominally read-only reviewer mutate real repo content. The repo
+        # is built directly under /tmp (dir="/tmp", not the platform tmp
+        # default) so this reproduces deterministically on every host OS,
+        # not just the Linux CI runners where the *workspace* happens to
+        # collide with /tmp.
+        repo = Path(tempfile.mkdtemp(prefix="harness-repo-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        ctx = self.workspace / ".claude" / "context"
+        ctx.mkdir(parents=True, exist_ok=True)
+        (ctx / "repos.yaml").write_text(f"repos:\n  r: {repo}\n")
+        rev = "ai-sdlc-harness:reviewer:ai-sdlc-reviewer"
+        self.assert_blocks("bash", bash(f"rm -rf {repo}/src", rev), "read-only")
+        # a genuinely unrelated /tmp scratch path is still allowed
+        self.assert_allows("bash", bash("pytest > /tmp/o.txt", rev))
+
     def test_reviewer_destructive_git_and_python_writes_blocked(self):
         # adversarial-review finding: a "read-only" reviewer could still
         # discard a developer's uncommitted worktree changes, or write a
@@ -474,6 +496,12 @@ class WriteGuard(GuardHarness):
         ctx.mkdir(parents=True, exist_ok=True)
         (ctx / "repos.yaml").write_text(f"repos:\n  r: {repo}\n")
 
+    def _register_repos(self, **repos):
+        ctx = self.workspace / ".claude" / "context"
+        ctx.mkdir(parents=True, exist_ok=True)
+        lines = "\n".join(f"  {name}: {path}" for name, path in repos.items())
+        (ctx / "repos.yaml").write_text(f"repos:\n{lines}\n")
+
     def test_developer_confined_to_registered_repo_and_worktree(self):
         # The confinement is derived from repos.yaml, NOT the payload cwd
         # (which is the workspace, not the worktree).
@@ -510,6 +538,27 @@ class WriteGuard(GuardHarness):
             self.workspace / "HEX AI Engine" / "Code" / "unrelated" / "x.java"),
             dev), "worktree")
 
+    def test_second_registered_repo_and_its_worktree_allowed_regardless_of_yaml_order(self):
+        # Adversarial-review finding (second pass, on this very fix): repos
+        # sharing a parent directory — the layout `/add-repo` produces for
+        # EVERY multi-repo workspace (`ws/Code/alpha`, `ws/Code/beta`) — used
+        # to return False on the FIRST repo's near-miss (alpha's parent
+        # contains beta; beta isn't alpha's worktree) without ever giving
+        # beta its own turn in the loop. Order-dependent on repos.yaml:
+        # wrong for every registered repo except whichever was listed first.
+        dev = "x:developer"
+        code = self.workspace / "Code"
+        alpha, beta = code / "alpha", code / "beta"
+        alpha.mkdir(parents=True)
+        beta.mkdir(parents=True)
+        self._register_repos(alpha=alpha, beta=beta)
+        self.assert_allows("write", self._w(str(beta / "src" / "x.py"), dev))
+        self.assert_allows("write", self._w(
+            str(code / "beta-wt-T1-abc" / "src" / "x.py"), dev))
+        # a sibling that is neither repo nor either's worktree stays blocked
+        self.assert_blocks("write", self._w(str(code / "gamma" / "x.py"), dev),
+                           "worktree")
+
     def test_developer_write_fails_open_without_registered_repos(self):
         # no repos.yaml -> bounds undeterminable -> fail open (never strand
         # a developer on a defense-in-depth guard); authority files stay
@@ -531,6 +580,37 @@ class WriteGuard(GuardHarness):
                                             "x:developer"))
         self.assert_allows("write", self._w("/tmp/scratch/plan-draft.md",
                                             "x:planner"))
+
+    def test_confinement_survives_a_workspace_nested_under_tmp(self):
+        # Deterministic, host-OS-independent regression test for the actual
+        # CI failure class this fix addresses: `tempfile.mkdtemp()` lands
+        # under /tmp on Linux but under /var/folders/… on macOS, so the
+        # original bug (a workspace living under /tmp colliding with the
+        # blanket /tmp scratch allowance) only ever reproduced on Linux CI
+        # runners — 9 confinement tests passed locally on macOS while
+        # genuinely broken. Built directly under /tmp (dir="/tmp") so this
+        # reproduces on any host OS running this suite, not just Linux.
+        ws = Path(tempfile.mkdtemp(prefix="harness-ws-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        repo = ws / "Code" / "backend"
+        repo.mkdir(parents=True)
+        ctx = ws / ".claude" / "context"
+        ctx.mkdir(parents=True)
+        (ctx / "repos.yaml").write_text(f"repos:\n  r: {repo}\n")
+
+        dev_write = self._w(str(ws / "Code" / "other" / "x.py"), "x:developer")
+        dev_write["cwd"] = str(ws)
+        self.assert_blocks("write", dev_write, "worktree")
+
+        planner_write = self._w(str(ws / "src" / "x.py"), "x:planner")
+        planner_write["cwd"] = str(ws)
+        self.assert_blocks("write", planner_write, "repo source")
+
+        # genuine scratch, a sibling of ws (not nested in it), still allowed
+        scratch_write = self._w("/tmp/genuinely-unrelated-scratch.md",
+                                "x:developer")
+        scratch_write["cwd"] = str(ws)
+        self.assert_allows("write", scratch_write)
 
     def test_developer_relative_traversal_escape_blocked(self):
         # adversarial-review finding: a relative path was never checked at
@@ -560,6 +640,20 @@ class WriteGuard(GuardHarness):
         self.assert_blocks(
             "write", self._w(str(self.workspace / "ai" / ".." / "src" / "x.py"), pl),
             "repo source")
+
+    def test_planner_scratch_excludes_a_registered_repo_checkout_under_tmp(self):
+        # Same class as the reviewer-side finding above: the planner's
+        # scratch check must not wave through a registered repo's checkout
+        # just because it independently sits under /tmp. Built directly
+        # under /tmp (dir="/tmp") so this is deterministic on every host OS.
+        repo = Path(tempfile.mkdtemp(prefix="harness-repo-", dir="/tmp"))
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        self._register_repo(repo)
+        pl = "x:planner"
+        self.assert_blocks("write", self._w(str(repo / "src" / "x.py"), pl),
+                           "repo source")
+        # a genuinely unrelated /tmp scratch path is still allowed
+        self.assert_allows("write", self._w("/tmp/plan-scratch.md", pl))
 
     def test_planner_cannot_write_meta_json_directly(self):
         """The path-confinement check above allows anything under

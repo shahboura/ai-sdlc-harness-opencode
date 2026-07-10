@@ -282,6 +282,8 @@ def _reviewer_bash_write_violation(cmd: str, cwd: Path) -> str | None:
     if _PROG_WRITE_RE.search(cmd):   # interpreter writes live INSIDE quotes
         return "an inline-interpreter file write"
 
+    workspace = _session_workspace(cwd).resolve()
+
     def scratch(tgt: str) -> bool:
         if tgt in _BASH_WRITE_SINK_OK:
             return True
@@ -294,7 +296,12 @@ def _reviewer_bash_write_violation(cmd: str, cwd: Path) -> str | None:
             path = path.resolve()
         except OSError:
             return False
-        return any(path.is_relative_to(r) for r in _tmp_roots())
+        # `_is_scratch_write`, not a bare /tmp check: a relative redirect
+        # resolves under the workspace, and on Linux the workspace itself
+        # commonly sits under /tmp — a bare check would wave through
+        # `tee build.log`-shaped in-workspace writes as if they were
+        # `tee /tmp/build.log` scratch (adversarial-review finding).
+        return _is_scratch_write(path, workspace)
 
     def described(idiom: str, raw: str) -> str:
         if raw.strip("\"'").startswith("$"):
@@ -550,6 +557,42 @@ def _tmp_roots() -> tuple[Path, ...]:
     return (Path("/tmp").resolve(),)
 
 
+def _is_scratch_write(path: Path, workspace: Path) -> bool:
+    """A /tmp write is genuine SCRATCH only when it falls OUTSIDE the
+    confined workspace's own tree AND outside every registered repo. On
+    Linux (unlike macOS, where the per-test tempdir lands under
+    /var/folders/…), `tempfile.mkdtemp()` — and CI/container workspaces
+    generally — commonly land the workspace itself under /tmp, and a
+    registered repo can independently be checked out under /tmp too (its
+    own checkout dir, not necessarily nested under the workspace at all —
+    `_registered_repos` finds repos VIA the workspace's repos.yaml, never
+    assumes they live under it). Without both exclusions, a relative
+    write that lands inside the workspace, or an absolute one that lands
+    inside a repo's checkout sitting outside the workspace, would ALSO
+    match the blanket /tmp allowance purely because of where it happens
+    to sit — silently defeating every stricter per-shape confinement this
+    scratch check sits behind (adversarial-review finding: 9 confinement
+    tests passed on macOS only — the exact inverse of the Darwin-symlink
+    bug the /tmp resolve() above was written to fix — and failed on Linux
+    CI, where `pytest > build.log`-shaped relative writes and `rm -rf
+    <workspace>/Code/other`-shaped sibling writes both resolved under
+    /tmp and were nodded through as scratch. A second adversarial-review
+    pass on the first fix then found the repo-checkout gap: without the
+    repo exclusion here, a reviewer/planner write into a sibling repo
+    checkout that ALSO happens to sit under /tmp — a plausible CI/sandbox
+    layout — would be waved through as scratch too, defeating the
+    reviewer's read-only guarantee and the planner's repo-source
+    immunity; the developer's own confinement doesn't depend on this
+    exclusion since `_developer_write_ok` checks repo/worktree membership
+    before ever calling this function, but reviewer and planner have no
+    such prior check)."""
+    if not any(path.is_relative_to(r) for r in _tmp_roots()):
+        return False
+    if path.is_relative_to(workspace):
+        return False
+    return not any(path.is_relative_to(r) for r in _registered_repos(workspace))
+
+
 def _registered_repos(workspace: Path) -> list[Path]:
     """Resolved paths of every repo registered in this workspace's
     `repos.yaml`. The developer write-confinement is built from these, NOT
@@ -592,12 +635,31 @@ def _developer_write_ok(path: Path, workspace: Path) -> bool:
     guarantee (authority files are blocked separately, raw git is blocked
     in bash, and the reviewer + HMAC chain are the real backstops), so a
     guard that can't compute its bounds must not strand a developer —
-    consistent with guard_write's documented fail-open stance."""
-    if any(path.is_relative_to(t) for t in _tmp_roots()):
-        return True
+    consistent with guard_write's documented fail-open stance.
+
+    Registered-repo membership is checked BEFORE the blanket /tmp scratch
+    allowance, not after: a path inside some repo's own parent directory
+    that ISN'T a legit worktree sibling of ANY registered repo is a
+    deliberate escape (the field case this guard exists for) and must
+    stay blocked even when that parent happens to sit under /tmp too —
+    falling through to `_is_scratch_write` for it would silently readmit
+    exactly the sibling-repo escape the worktree-prefix check just
+    refused (adversarial-review finding, same class as the Linux-vs-macOS
+    tempdir gap `_is_scratch_write` documents).
+
+    The loop tries EVERY registered repo before giving up — not a
+    return-on-first-non-match — because a multi-repo workspace commonly
+    registers repos as siblings under one shared parent (`ws/Code/alpha`,
+    `ws/Code/beta`, the exact layout `/add-repo` produces): a path inside
+    `beta` fails `alpha`'s direct-membership check AND lands inside
+    `alpha.parent`, so returning False on that first near-miss would deny
+    a perfectly legitimate write into `beta` before `beta` ever got a
+    turn — order-dependent on `repos.yaml` iteration order, and wrong for
+    every repo but whichever happened to be listed first (adversarial-
+    review finding, second pass: confirmed as a regression this fix's
+    first draft introduced, independent of the /tmp collision above)."""
     repos = _registered_repos(workspace)
-    if not repos:
-        return True  # can't determine bounds — fail open, don't strand dev
+    near_a_repo = False
     for repo in repos:
         if path.is_relative_to(repo):
             return True
@@ -606,7 +668,14 @@ def _developer_write_ok(path: Path, workspace: Path) -> bool:
             rel = path.relative_to(parent)
             if rel.parts and rel.parts[0].startswith(repo.name + "-wt-"):
                 return True
-    return False
+            near_a_repo = True  # sibling of THIS repo, not its worktree —
+            # still check the rest before concluding it's an escape
+    if near_a_repo:
+        return False  # sibling of some registered repo, not a legit
+        # worktree of ANY of them — never falls through to /tmp scratch
+    if _is_scratch_write(path, workspace):
+        return True
+    return not repos  # can't determine bounds — fail open, don't strand dev
 
 
 # --------------------------------------- developer TDD-ordering guard
@@ -780,9 +849,15 @@ def guard_write(p: dict) -> None:
             block(reason, cwd)
     if shape == "planner":
         path = _resolve_write_path(fp, cwd)
-        allowed = (ws.resolve() / "ai", (ws / ".claude" / "context").resolve(),
-                  *_tmp_roots())
-        if not any(path.is_relative_to(a) for a in allowed):
+        artifact_roots = (ws.resolve() / "ai", (ws / ".claude" / "context").resolve())
+        # scratch checked via `_is_scratch_write`, not a bare /tmp
+        # membership test: the workspace root itself commonly sits under
+        # /tmp (Linux `tempfile.mkdtemp()`, CI/containers), and a bare
+        # check would wave through any workspace-internal path — e.g.
+        # `<workspace>/src/x.py` — as if it were unrelated /tmp scratch
+        # (adversarial-review finding).
+        if not (any(path.is_relative_to(a) for a in artifact_roots)
+                or _is_scratch_write(path, ws.resolve())):
             block("planner writes are confined to run artifacts (ai/<run>/) and "
                   ".claude/context/ — it never touches repo source "
                   "(design.md piece 3 path-guard).", cwd)
