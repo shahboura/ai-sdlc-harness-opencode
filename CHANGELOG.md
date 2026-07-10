@@ -6,20 +6,21 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
-- Fixed a guard-layer confinement gap: on a workspace (or a registered repo)
-  that itself lives under `/tmp` — the default on Linux, and common in
-  CI/container/sandbox setups — the blanket "`/tmp` is scratch space"
-  allowance could swallow the workspace or repo's own directory tree,
-  silently defeating the developer's repo/worktree confinement, the
-  reviewer's read-only guarantee, and the planner's repo-source immunity.
-  Scratch is now recognized only when a write target falls outside both the
-  confined workspace and every registered repo, regardless of where either
-  happens to sit on disk.
-- Fixed a related regression (caught by adversarial review before it
-  shipped): a multi-repo workspace — two or more repos registered under one
-  shared parent directory, the layout `/add-repo` produces — could wrongly
-  block writes into every registered repo except whichever was listed first
-  in `repos.yaml`.
+## [3.0.1] — 2026-07-10
+
+> **Linux CI fix.** The v3.0 rewrite's first CI run failed on every Linux job — a real confinement gap in the guard layer, not a flaky test. This patch closes it.
+
+### Release highlights
+
+| Theme | What changed |
+|---|---|
+| **Guard confinement under `/tmp`** | The guard layer's "`/tmp` is scratch space" allowance could swallow a workspace or registered repo that itself lives under `/tmp` — the default tempdir root on Linux, and a plausible layout for CI/container/sandbox workspaces — silently defeating the developer's repo/worktree confinement, the reviewer's read-only guarantee, and the planner's repo-source immunity. Scratch is now recognized only when a write target falls outside both the confined workspace and every registered repo, regardless of where either sits on disk. An adversarial-review pass on the fix itself, before it shipped, also caught and closed a related regression: a multi-repo workspace (two or more repos registered under one shared parent directory, the `/add-repo` layout) could wrongly block writes into every registered repo except whichever was listed first in `repos.yaml`. |
+
+### Verification on tag tip
+
+- `python -m harness.schema` — declared data valid
+- `python tools/budget_check.py` — line budget green (0 errors, 3 pre-existing soft-cap warnings, unrelated files)
+- `python -m unittest discover -s tests` — 586 tests green
 
 ## [3.0.0] — 2026-07-08
 
