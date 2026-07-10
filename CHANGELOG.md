@@ -4,6 +4,24 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ---
 
+## [Unreleased]
+
+## [3.0.1] — 2026-07-10
+
+> **Linux CI fix.** The v3.0 rewrite's first CI run failed on every Linux job — a real confinement gap in the guard layer, not a flaky test. This patch closes it.
+
+### Release highlights
+
+| Theme | What changed |
+|---|---|
+| **Guard confinement under `/tmp`** | The guard layer's "`/tmp` is scratch space" allowance could swallow a workspace or registered repo that itself lives under `/tmp` — the default tempdir root on Linux, and a plausible layout for CI/container/sandbox workspaces — silently defeating the developer's repo/worktree confinement, the reviewer's read-only guarantee, and the planner's repo-source immunity. Scratch is now recognized only when a write target falls outside both the confined workspace and every registered repo, regardless of where either sits on disk. An adversarial-review pass on the fix itself, before it shipped, also caught and closed a related regression: a multi-repo workspace (two or more repos registered under one shared parent directory, the `/add-repo` layout) could wrongly block writes into every registered repo except whichever was listed first in `repos.yaml`. |
+
+### Verification on tag tip
+
+- `python -m harness.schema` — declared data valid
+- `python tools/budget_check.py` — line budget green (0 errors, 3 pre-existing soft-cap warnings, unrelated files)
+- `python -m unittest discover -s tests` — 586 tests green
+
 ## [3.0.0] — 2026-07-08
 
 > **The ground-up rewrite.** Almost all of the v2.x line's accumulated complexity compensated for one root cause: orchestration logic lived in markdown prose an LLM had to faithfully execute every run, with hooks bolted on to catch the cases where it didn't. v3.0 replaces that with a **declared-data pipeline enforced by a Python core** — every mechanical rule moves into code that just runs, and the model is reserved for judgment. This is a breaking change; `/migrate-workspace` adopts an existing v2.x workspace (config carries over — run history stays archived in place).
