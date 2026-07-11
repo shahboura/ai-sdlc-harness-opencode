@@ -6,6 +6,23 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
+## [3.0.2] — 2026-07-11
+
+> **Guard scope, not guard bypass.** The one guard rule that ignored workspace boundaries now respects them — raw git stays blocked exactly where you've actually turned the harness on, nowhere else.
+
+### Release highlights
+
+| Theme | What changed |
+|---|---|
+| **Raw-git block scoped to harness workspaces** | The raw-git block (`commit`/`merge`/`rebase`/`cherry-pick`/`revert`/`am`/`pull`/`push` redirected to the owned `harness` verbs) used to apply in **any** session and repo the moment the plugin was enabled, even ones with nothing to do with the harness — a real problem for anyone enabling the plugin at user scope rather than per-project. It now only applies inside a workspace that has actually completed `/init-workspace`; a project you've never initialized sees ordinary git, no need to disable the plugin for it. Two residuals are documented rather than closed here: a session opened directly inside a repo registered to a *sibling* workspace (rather than the workspace itself) isn't recognized yet; and the bootstrap marker this check reads isn't tamper-protected the way `state.yaml` is, so a direct edit to it can silently turn the block back off. Both were flagged by an adversarial-review pass before this shipped and accepted as known limitations rather than expanding the fix's scope. |
+
+### Verification on tag tip
+
+- `python -m harness.schema` — declared data valid
+- `python tools/budget_check.py` — line budget green (0 errors, 3 pre-existing soft-cap warnings, unrelated files)
+- `python -m unittest discover -s tests` — 594 tests, OK (skipped=6)
+- `/verify`: 5/5 PASS, fresh stamp written
+
 ## [3.0.1] — 2026-07-10
 
 > **Linux CI fix.** The v3.0 rewrite's first CI run failed on every Linux job — a real confinement gap in the guard layer, not a flaky test. This patch closes it.
