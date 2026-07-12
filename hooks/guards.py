@@ -31,10 +31,16 @@ Per-guard policy (declared, a "keeping" from the original):
   user-prompt     never blocks (capture only).
   subagent-stop   never blocks (capture + stall detection feed events ledger).
 
-If PyYAML is missing, guards exit non-zero with a visible remediation error
-(they do not silently disable); init-workspace verifies the dependency up
-front, and the HMAC chain (RC4) still detects authority-file tampering even
-with guards down — defense in depth, guard = fast-fail, chain = guarantee.
+If PyYAML is missing, the yaml-needing guards DEGRADE OPEN with one visible
+remediation line on stderr (exit 0 — see main()'s YamlMissing handler; the
+yaml-free bash/write guards keep blocking); init-workspace verifies the
+dependency up front, and the HMAC chain (RC4) still detects authority-file
+tampering even with guards down — defense in depth, guard = fast-fail,
+chain = guarantee. The same posture covers a missing INTERPRETER: if the
+hook probe chain (hooks.json) finds no runnable python at all — including
+the Windows Store alias that answers to `python`/`python3` but only prints
+an install nag — the hook errors non-2 and the platform treats it as
+non-blocking. Accepted: pre-venv, nothing harness-y can execute anyway.
 """
 from __future__ import annotations
 
@@ -43,6 +49,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
@@ -131,8 +138,17 @@ GIT_VERB_RE = re.compile(
 # through the raw-git block entirely (adversarial-review round 6 finding).
 SHELL_C_RE = re.compile(
     r"\b(?:sh|bash|zsh|dash|ksh)\b[^|;&\n\r]*?-c[ \t]+(?:\"([^\"]*)\"|'([^']*)')")
+# On Windows the separator class also admits `\`: the Bash tool there is
+# Git Bash, whose msys runtime maps a QUOTED backslash path ("ai\r1\
+# state.yaml") onto the same file a forward-slash spelling reaches — so a
+# backslash-spelled authority write must block identically. POSIX keeps the
+# `/`-only form, bit-identical to before (every nt-conditional in this
+# module follows that rule: Windows support must not move POSIX behavior).
+_SEP = r"[/\\]" if os.name == "nt" else "/"
+_NOT_SEP = r"[^/\\\s'\"]" if os.name == "nt" else r"[^/\s'\"]"
 AUTHORITY_RE = re.compile(
-    r"ai/[^/\s'\"]+/(state\.yaml|events\.ndjson|tokens\.ndjson|"
+    r"ai" + _SEP + _NOT_SEP + "+" + _SEP +
+    r"(state\.yaml|events\.ndjson|tokens\.ndjson|"
     r"human-input\.ndjson|reviews\.ndjson|\.redproof|\.state\.lock)|\.hmac\b")
 # Programmatic file writes an inline interpreter can perform without any
 # shell redirect (adversarial-review CRITICAL: WRITE_HINT_RE below caught
@@ -218,12 +234,64 @@ _TEE_TARGET_RE = re.compile(r"\btee\b(?:[ \t]+-\S+)*[ \t]+(\"[^\"]+\"|'[^']+'|[^
 # it now gets the same confinement as rm/mv/cp, previously unmatched)
 _DESTRUCTIVE_VERB_RE = re.compile(
     r"\b(?:rm|mv|cp|touch|truncate|dd|install)\b|\bsed\b[^\n;|&]*?[ \t]-\w*i")
-_ABS_TOKEN_RE = re.compile(r"\"(/[^\"]*)\"|'(/[^']*)'|(?<![\w/])(/[^\s;|&<>]+)")
+# nt additionally captures drive-letter absolutes (`C:/x`, quoted `C:\x`) —
+# without them a developer's `sed -i D:/other/repo/x` carried no visible
+# absolute target at all (confinement silently fail-open) and a reviewer's
+# `rm C:/Temp/x` swept zero absolute tokens (fail-closed false block). The
+# quoted forms accept `\` only BEHIND a drive letter: a bare `"\section{x}"`
+# (TeX/grep prose) must not become a phantom write target. POSIX keeps the
+# original `/`-only pattern so its match set cannot move.
+# The quoted forms also admit `\\server\…` UNC (double backslash — still
+# structurally distinct from `"\section{x}"` prose): without it, a
+# developer's `rm "\\server\share\x"` swept ZERO tokens and the
+# confinement never ran — the one fail-open the adversarial review found.
+_ABS_TOKEN_RE = re.compile(
+    r"\"((?:[A-Za-z]:[/\\]|\\\\|/)[^\"]*)\"|'((?:[A-Za-z]:[/\\]|\\\\|/)[^']*)'"
+    r"|(?<![\w/])((?:[A-Za-z]:)?/[^\s;|&<>]+)"
+) if os.name == "nt" else re.compile(
+    r"\"(/[^\"]*)\"|'(/[^']*)'|(?<![\w/])(/[^\s;|&<>]+)")
 _PROG_WRITE_RE = re.compile(_PROG_WRITE)
 # targets that are always fine regardless of the allowed roots
 _BASH_WRITE_SINK_OK = ("/dev/null", "/dev/stdout", "/dev/stderr", "/dev/tty")
 
 _QUOTED_SPAN_RE = re.compile(r"\"[^\"]*\"|'[^']*'")
+
+
+# /x or /x/… where x is one drive letter — Git Bash's drive mounts
+_MSYS_DRIVE_RE = re.compile(r"^/([A-Za-z])(/|$)")
+
+
+def _bash_path(tgt: str) -> Path:
+    """A bash-command path token, as the EXECUTING shell will resolve it.
+    On Windows the Bash tool runs under Git Bash, and two of its mount
+    spellings must map to where the write actually goes:
+
+    - `/tmp/…` IS the user temp directory — so a literal `/tmp` target
+      lands in genuine scratch there, not in `<drive>:\\tmp`. Without the
+      translation the reviewer's `tee /tmp/build.log` idiom (the field
+      pain the scratch allowance exists for) false-blocks on every
+      Windows host, since `Path('/tmp/x')` is not even absolute under
+      Windows path semantics.
+    - `/c/Users/…` IS `C:\\Users\\…` — the spelling Git Bash's own `pwd`
+      emits, so it shows up naturally in developer commands. Untranslated
+      it mis-resolves against the cwd drive (`D:\\c\\Users\\…`) and
+      false-blocks legitimate in-repo/worktree writes (adversarial-review
+      finding on this change).
+
+    Other msys mounts (`/etc`, `/usr`, …) stay untranslated: they live
+    inside the Git installation, never inside a registered repo, so the
+    rootless-target gate's fail-closed handling is the right answer for
+    them. POSIX: identity."""
+    if os.name == "nt":
+        # casefolded prefix test: msys mounts are case-insensitive —
+        # `cygpath -w /TMP/x` lands in the same temp dir (review finding)
+        low = tgt.lower()
+        if low == "/tmp" or low.startswith("/tmp/"):
+            return Path(tempfile.gettempdir(), tgt[5:].lstrip("/"))
+        m = _MSYS_DRIVE_RE.match(tgt)
+        if m:
+            return Path(m.group(1).upper() + ":/", tgt[3:])
+    return Path(tgt)
 
 
 def _mask_quoted(cmd: str) -> str:
@@ -293,7 +361,7 @@ def _reviewer_bash_write_violation(cmd: str, cwd: Path) -> str | None:
     def scratch(tgt: str) -> bool:
         if tgt in _BASH_WRITE_SINK_OK:
             return True
-        path = Path(tgt)
+        path = _bash_path(tgt)   # nt: /tmp/… is Git Bash's temp mount
         if not path.is_absolute():
             path = cwd / path      # a relative redirect lands in the
             # workspace — a real write, unlike the developer's accepted
@@ -531,9 +599,18 @@ def guard_bash(p: dict) -> None:
             # that). Relative targets land in cwd (residual, see the
             # _developer_bash_write_targets note).
             for tgt in _developer_bash_write_targets(target):
-                if tgt in _BASH_WRITE_SINK_OK or not Path(tgt).is_absolute():
+                # `tpath`, never `p` — `p` is this guard's payload param
+                tpath = _bash_path(tgt)  # nt: /tmp/… is Git Bash's temp mount
+                # nt: a rootless '/etc/x' target is a Git Bash msys mount —
+                # definitely OUTSIDE every drive-lettered repo/worktree
+                # root, so it must not slip past the is_absolute() gate as
+                # if it were a relative (in-cwd) write
+                nt_rootless = (os.name == "nt" and not tpath.is_absolute()
+                               and tgt.startswith("/"))
+                if tgt in _BASH_WRITE_SINK_OK or not (tpath.is_absolute()
+                                                      or nt_rootless):
                     continue
-                resolved = Path(tgt).resolve()
+                resolved = tpath.resolve()
                 if not _developer_write_ok(resolved,
                                            _session_workspace(cwd).resolve()):
                     block("developer bash writes are confined to a registered "
@@ -561,9 +638,18 @@ def _tmp_roots() -> tuple[Path, ...]:
     resolves symlinks, so the un-resolved literal `Path("/tmp")` never
     matched anything there (adversarial-review finding: the whole /tmp
     allowance was dead code on Darwin — every scratchpad write by a
-    developer/planner blocked). Deliberately NOT `tempfile.gettempdir()`:
-    TMPDIR can be anywhere (and a workspace living under it — common in
-    tests — would swallow the whole confinement)."""
+    developer/planner blocked). On POSIX deliberately NOT
+    `tempfile.gettempdir()`: TMPDIR can be anywhere (and a workspace living
+    under it — common in tests — would swallow the whole confinement).
+
+    Windows has no fixed `/tmp` at all, so there `gettempdir()` (%TEMP%) IS
+    the platform scratch root — with the same swallowing hazard accepted
+    knowingly: a workspace under %TEMP% is the NORM for tests on Windows,
+    and `_is_scratch_write`'s workspace/registered-repo exclusions (added
+    for exactly the Linux workspace-under-/tmp case) are what keep the
+    confinement real there, not the root's location."""
+    if os.name == "nt":
+        return (Path(tempfile.gettempdir()).resolve(),)
     return (Path("/tmp").resolve(),)
 
 
@@ -598,9 +684,17 @@ def _is_scratch_write(path: Path, workspace: Path) -> bool:
     such prior check)."""
     if not any(path.is_relative_to(r) for r in _tmp_roots()):
         return False
-    if path.is_relative_to(workspace):
+    # BOTH directions, not just descendant-ness (adversarial-review finding
+    # on the Windows port, but the hole was cross-platform): the workspace
+    # commonly lives UNDER the scratch root (Linux mkdtemp, Windows %TEMP%
+    # as the norm), so an ANCESTOR target — `rm -rf /tmp` itself — passed
+    # the descendant checks and was sanctioned as scratch while the sweep
+    # would take the workspace, its ledgers, and any temp-resident repo
+    # with it.
+    if path.is_relative_to(workspace) or workspace.is_relative_to(path):
         return False
-    return not any(path.is_relative_to(r) for r in _registered_repos(workspace))
+    return not any(path.is_relative_to(r) or r.is_relative_to(path)
+                   for r in _registered_repos(workspace))
 
 
 def _registered_repos(workspace: Path) -> list[Path]:
@@ -1443,6 +1537,19 @@ def _debug_dump(name: str, payload: dict) -> None:
 
 
 def main() -> None:
+    # Guard stderr is read by the platform (and by the test suite) as
+    # UTF-8; the messages carry em-dashes/arrows, and Windows' default
+    # cp1252 pipe encoding would mojibake them — same output contract as
+    # harness/__main__.py. errors= must be RESTATED: reconfigure resets it
+    # to "strict", and stderr's documented default is "backslashreplace" —
+    # under strict, a block() message interpolating an un-encodable payload
+    # char (a lone surrogate in a path token) RAISES inside print, and a
+    # fail-open guard then exits 0: the write it just decided to block is
+    # allowed (adversarial-review finding on this very change, CONFIRMED
+    # with an end-to-end repro — the one edit here that had silently moved
+    # POSIX behavior).
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     name = sys.argv[1] if len(sys.argv) > 1 else ""
     guard = GUARDS.get(name)
     if guard is None:

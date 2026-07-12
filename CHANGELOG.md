@@ -6,6 +6,37 @@ All notable changes to `ai-sdlc-harness` are documented here.
 
 ## [Unreleased]
 
+## [3.0.3] — 2026-07-12
+
+> **Native Windows support — the CI lane is now enforcing.** The harness was built and tested on macOS/Linux; the Windows CI lane was informational (`continue-on-error`) and admitted to being written blind. First real triage took the suite from **290 failures to 0**, and the lane now gates PRs like the other two — followed by an adversarial-review pass that closed four more gaps before shipping.
+
+### Release highlights
+
+| Theme | What changed |
+|---|---|
+| **Windows CI lane now gates PRs** | Was `continue-on-error` (informational only, written blind); first real triage took the suite from **290 failures to 0** on Windows, and the lane now blocks merges like the Linux and macOS lanes. |
+| **Hooks, launcher, and provider CLIs resolve the Windows layout** | `hooks/hooks.json` / `bin/harness` probe `.venv/Scripts/python.exe` alongside the POSIX layout and fall back `python3` → `python`; provider CLI resolution goes through `shutil.which` (walks PATHEXT) instead of bare `CreateProcess`, so `az.cmd` and similar shims are found; `/init-workspace`, `harness.schema`'s remediation text, and the README instructions cover both venv layouts. |
+| **Guard layer is Windows-path aware** | All new behavior gated on `os.name == "nt"`, POSIX behavior untouched: scratch root is `%TEMP%`; a literal `/tmp/…` in a Bash command is recognized as Git Bash's temp mount; drive-letter absolute targets (`C:/x`, `C:\x`) are visible to write-confinement and the destructive-verb sweep; rootless msys targets (`/etc/x`) no longer slip past confinement as "relative"; backslash-spelled authority paths block like forward-slash ones. |
+| **`merge-task --autosquash` works on Windows** | The blind-written `cmd /c exit 0` no-op editor was itself the breakage — git mangles multi-word editors through its sh layer. Plain `GIT_SEQUENCE_EDITOR=true` works everywhere because Git for Windows bundles its own sh. |
+| **UTF-8 output is a contract, not a locale accident** | The CLI and guard hooks emit UTF-8 on every OS (`cp1252` mojibaked every em-dash in a detail string); every subprocess the harness runs (`git`, test suites, forge CLIs, scanners) is decoded as UTF-8 with replacement, and all production file IO carries an explicit `encoding="utf-8"`. |
+| **`init-verify` measures not-found instead of assuming it** | `cmd /c missing-cmd` exits **1** on Windows, not the assumed 9009 — indistinguishable from a red-but-runnable suite by code alone, so a not-found-shaped exit now also requires the command's first token to resolve to nothing. |
+| **Test suite made OS-portable** | Fake forge CLIs (`gh`/`glab`/`az`) are real PE launchers on Windows; `tests/support.py` centralizes the platform seams (read-only-safe `rmtree` for git fixtures, wrapper resolution, scratch-root constants); a hardcoded `:` PATH separator that let the real host `glab` answer for a stub is fixed; a new Windows-only guard-shape test class covers the `nt`-conditional forms. |
+| **Adversarial-review pass closed 4 gaps before shipping** | A lone-surrogate character in a payload path could crash a fail-open guard's block message and flip BLOCK to ALLOW (`backslashreplace` now explicit everywhere); the scratch allowance sanctioned `rm -rf /tmp` itself when the workspace lived under the scratch root (ancestor targets now refuse); Git Bash's `/c/…` and case-variant `/TMP/…` spellings now translate like `/tmp`, and quoted `\\server\share` UNC targets are now swept; the not-found gate resolved the command's first token against the harness process cwd instead of the repo the command ran in (misclassifying legitimately-red repo-local runners), and the CLI now refuses interpreters below Python 3.10. |
+| **CI triage caught 2 more real bugs the enforcing matrix exposed for the first time** | `tests/support.py`'s read-only-safe `rmtree` crashed with `TypeError` on macOS/Ubuntu: Python's fd-based rmtree walker can hand its retry callback `os.open` (needs a `flags` arg) instead of `os.unlink`/`os.rmdir`, not just on Windows's classic path — the callback now decides unlink vs. rmdir from the path's own type instead of trusting the callback function's arity. Separately, `harness/ndjson.now_iso()`'s microsecond-precision timestamp could still tie between two calls microseconds apart on a courser OS clock grain (only ever observed on a Windows Python 3.10 CI image), silently failing the reviewer-verdict ledger's strict-postdate ordering rule; timestamps are now clamped to strictly increasing within the process instead of trusting the OS clock's actual resolution. |
+
+### Known residuals (documented, not fixed)
+
+- Multi-line arguments to a `.cmd`-implemented CLI (e.g. some `az` operations) are lossy at the `cmd.exe` parser layer; `gh`/`glab` ship as `.exe` and are unaffected.
+- Pre-venv on a Windows host whose only `python`/`python3` is the Microsoft Store alias, hooks degrade open until `/init-workspace` creates the venv — consistent with the existing pre-setup posture.
+- msys mounts other than `/tmp` and `/<drive>` (e.g. `/etc`, `/usr`) stay untranslated in the guards — they live inside the Git installation, so fail-closed is the intended answer.
+
+### Verification on tag tip
+
+- `python -m harness.schema` — declared data valid
+- `python tools/budget_check.py` — 0 errors (3 pre-existing soft-cap warnings)
+- `python -m unittest discover -s tests` — 603 tests, OK on Windows 11 (skipped=2: two POSIX-only permission/symlink assertions) and on Linux (containerized clone of the same tree)
+- `/verify`: 5/5 PASS, fresh stamp written
+
 ## [3.0.2] — 2026-07-11
 
 > **Guard scope, not guard bypass.** The one guard rule that ignored workspace boundaries now respects them — raw git stays blocked exactly where you've actually turned the harness on, nowhere else.
