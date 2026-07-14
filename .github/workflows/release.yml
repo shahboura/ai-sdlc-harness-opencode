@@ -1,0 +1,55 @@
+# Release — npm publish on version tags
+#
+# Trigger: git tag v<semver> && git push origin v<semver>
+#
+# Prerequisites:
+#   1. Set NPM_TOKEN in https://github.com/<owner>/<repo>/settings/secrets/actions
+#      with an npm automation token (publish permission).
+#   2. The token owner must be an org member / package collaborator.
+#
+# Tags:    v*          -> npm publish
+# Dry-run: v*-alpha*   -> npm publish --dry-run (safety gate for pre-releases)
+
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write    # needed for creating a GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install opencode plugin deps
+        working-directory: .opencode
+        run: npm ci
+
+      - name: Validate npm packaging
+        run: npm pack --dry-run
+
+      - name: Dry-run pre-release tags
+        if: contains(github.ref_name, '-')
+        run: npm publish --dry-run
+
+      - name: Publish to npm
+        if: ${{ !contains(github.ref_name, '-') }}
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true

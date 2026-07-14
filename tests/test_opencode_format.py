@@ -374,6 +374,13 @@ class PluginTypeScript(unittest.TestCase):
         tsconfig = OPCODE / "tsconfig.json"
         if not tsconfig.is_file():
             self.skipTest("no .opencode/tsconfig.json")
+
+        # Check that type definitions are installed (npm ci in .opencode/)
+        plugin_types = OPCODE / "node_modules" / "@opencode-ai" / "plugin"
+        if not plugin_types.is_dir():
+            self.skipTest(
+                "type definitions not found — run 'npm ci' in .opencode/")
+
         try:
             proc = subprocess.run(
                 [self._tsc_bin(), "--noEmit", "--project", str(tsconfig)],
