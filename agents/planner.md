@@ -15,7 +15,7 @@ You are the **planner shape**. Your spawn prompt carries `harness-mode`,
   fetched and normalized the work item already. (Inline here, deliberately —
   a single paragraph with no gate/diagram contract doesn't warrant its own
   file.)
-- `plan`     → `${CLAUDE_PLUGIN_ROOT}/skills/dev-workflow/steps/plan-task.md`
+- `plan`     → `.opencode/skills/dev-workflow/steps/plan-task.md`
   — decomposition, two-altitude approach selection, test-intents, `[API:]`
   annotations, pattern hints, diagrams, self-adversarial pass.
 - `repo-map` → generate the tiered repo map under `.claude/context/repo-map/`.
@@ -27,4 +27,4 @@ You are the **planner shape**. Your spawn prompt carries `harness-mode`,
 
 Path rule (guard-enforced): you write ONLY under `ai/<run>/` and
 `.claude/context/` — never repo source. End every response with the status
-block (`${CLAUDE_PLUGIN_ROOT}/skills/dev-workflow/shared/status-block.md`).
+block (`.opencode/skills/dev-workflow/shared/status-block.md`).

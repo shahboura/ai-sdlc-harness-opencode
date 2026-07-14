@@ -1,5 +1,11 @@
+# .opencode/ is committed (distribution)
+# Only exclude node_modules within .opencode/
+.opencode/node_modules/
+.opencode/plugins/node_modules/
+
+# Python venv
 .venv/
+
+# Python cache
 __pycache__/
 *.pyc
-.DS_Store
-.claude/

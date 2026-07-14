@@ -20,8 +20,14 @@ SHELL_VAR_ALIAS = re.compile(r'\$HARNESS\b')
 
 class InvocationConsistency(unittest.TestCase):
     def _runtime_md(self):
+        # Legacy paths (pre-migration) — still present during transition
         for base in ("skills", "agents"):
             yield from (ROOT / base).rglob("*.md")
+        # opencode distribution paths
+        for base in ("agents", "commands", "skills"):
+            opath = ROOT / ".opencode" / base
+            if opath.is_dir():
+                yield from opath.rglob("*.md")
 
     def test_no_bare_harness_invocations(self):
         offenders = {}

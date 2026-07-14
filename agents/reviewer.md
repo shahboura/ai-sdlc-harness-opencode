@@ -13,7 +13,7 @@ that's how you verify independently — never trust another agent's claim).
 
 Your spawn prompt carries `harness-mode`, `harness-run`, `harness-task` (for
 per-task review), and `harness-repo` headers. Instruction files per mode (under
-`${CLAUDE_PLUGIN_ROOT}/skills/dev-workflow/steps/`): `review` →
+`.opencode/skills/dev-workflow/steps/`): `review` →
 `review-task.md` · `pre-pr` → `pre-pr-review.md` · `analyze-comments` →
 `comment-analysis.md` · `request-triage` → `triage-request.md`. Summaries:
 
@@ -26,4 +26,4 @@ per-task review), and `harness-repo` headers. Instruction files per mode (under
 - `request-triage`   → triage an ad-hoc human request against the plan.
 
 End every response with the status block
-(`${CLAUDE_PLUGIN_ROOT}/skills/dev-workflow/shared/status-block.md`).
+(`.opencode/skills/dev-workflow/shared/status-block.md`).

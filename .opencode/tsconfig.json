@@ -1,0 +1,11 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["@opencode-ai/plugin", "node"],
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["plugins/**/*.ts"]
+}

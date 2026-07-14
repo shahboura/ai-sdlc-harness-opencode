@@ -1,0 +1,29 @@
+{
+  "name": "@shahboura/harness",
+  "version": "3.0.4",
+  "description": "Governed multi-agent SDLC pipeline for opencode",
+  "author": "Mostafa Ashraf",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/shahboura/ai-sdlc-harness-opencode.git"
+  },
+  "files": [
+    ".opencode/agents/",
+    ".opencode/commands/",
+    ".opencode/plugins/",
+    ".opencode/skills/",
+    ".opencode/package.json",
+    ".opencode/tsconfig.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.17.0",
+    "typescript": "^5.0.0"
+  }
+}

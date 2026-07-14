@@ -32,14 +32,15 @@ class ShippedDataValidates(unittest.TestCase):
             data = schema.load_yaml(ROOT / rel)
             self.assertEqual(yaml.safe_load(yaml.safe_dump(data)), data, rel)
 
-    def test_package_version_matches_plugin_json(self):
+    def test_package_version_matches_versions_json(self):
         # adversarial-review finding: harness.__version__ was a second
         # hardcoded copy ("0.1.0-m0") that drifted from plugin.json through
         # 12 releases — now derived FROM it, so this can't regress silently.
+        # Post-migration, versions.json is the single source of truth.
         import json
         import harness
-        plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(harness.__version__, plugin["version"])
+        versions = json.loads((ROOT / "versions.json").read_text(encoding="utf-8"))
+        self.assertEqual(harness.__version__, versions["version"])
 
 
 class ValidatorCatchesBrokenManifest(unittest.TestCase):

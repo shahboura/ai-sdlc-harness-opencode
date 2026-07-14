@@ -16,10 +16,10 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLANNER_MD = ROOT / "agents" / "planner.md"
-PLAN_STEP_MD = ROOT / "skills" / "dev-workflow" / "steps" / "plan.md"
-PLAN_TASK_MD = ROOT / "skills" / "dev-workflow" / "steps" / "plan-task.md"
-DIAGRAM_STYLING_MD = ROOT / "skills" / "dev-workflow" / "shared" / "diagram-styling.md"
+PLANNER_MD = ROOT / ".opencode" / "agents" / "planner.md"
+PLAN_STEP_MD = ROOT / ".opencode" / "skills" / "dev-workflow" / "steps" / "plan.md"
+PLAN_TASK_MD = ROOT / ".opencode" / "skills" / "dev-workflow" / "steps" / "plan-task.md"
+DIAGRAM_STYLING_MD = ROOT / ".opencode" / "skills" / "dev-workflow" / "shared" / "diagram-styling.md"
 
 REQUIRED_ARTIFACTS = [
     "test-intent",

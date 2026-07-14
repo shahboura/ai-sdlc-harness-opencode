@@ -10,7 +10,7 @@ description: >
 
 # workspace-config
 
-Every command below is `${CLAUDE_PLUGIN_ROOT}/bin/harness <verb> …` — run it
+Every command below is `bin/harness <verb> …` — run it
 yourself via Bash. Never ask the user to type a `harness` command; the user
 only answers the questions below.
 
