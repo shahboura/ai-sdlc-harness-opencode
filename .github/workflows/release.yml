@@ -1,11 +1,15 @@
-# Release — npm publish on version tags
+# Release — npm publish on version tags (Trusted Publisher / OIDC)
 #
 # Trigger: git tag v<semver> && git push origin v<semver>
 #
 # Prerequisites:
-#   1. Set NPM_TOKEN in https://github.com/<owner>/<repo>/settings/secrets/actions
-#      with an npm automation token (publish permission).
-#   2. The token owner must be an org member / package collaborator.
+#   1. Configure a Trusted Publisher in the npm package's settings:
+#      https://www.npmjs.com/settings/<owner>/packages/<name>/features
+#      Set "GitHub Actions" as the publisher with:
+#        - Owner:  <repo-owner>
+#        - Repo:   <repo-name>
+#        - Workflow: release.yml
+#   2. No NPM_TOKEN secret needed — auth is handled via OIDC.
 #
 # Tags:    v*          -> npm publish
 # Dry-run: v*-alpha*   -> npm publish --dry-run (safety gate for pre-releases)
@@ -21,14 +25,14 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: write    # needed for creating a GitHub Release
+      contents: write     # needed for creating a GitHub Release
+      id-token: write     # needed for npm Trusted Publisher (OIDC)
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-          registry-url: "https://registry.npmjs.org"
 
       - name: Install opencode plugin deps
         working-directory: .opencode
@@ -39,13 +43,11 @@ jobs:
 
       - name: Dry-run pre-release tags
         if: contains(github.ref_name, '-')
-        run: npm publish --dry-run
+        run: npm publish --dry-run --provenance
 
       - name: Publish to npm
         if: ${{ !contains(github.ref_name, '-') }}
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
