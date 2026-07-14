@@ -246,7 +246,7 @@ Every guard's fail-open/fail-closed policy is chosen deliberately and tested: re
 
 ## The `harness` CLI
 
-All ~49 owned verbs run through the wrapper `${CLAUDE_PLUGIN_ROOT}/bin/harness` (resolves the plugin venv in either OS layout, falls back to system `python3`/`python`). It runs on macOS, Linux, and Windows — on Windows it executes under Git Bash, with `bin/harness.cmd` as the cmd.exe sibling. Agents call it; you rarely need to — except `abort`.
+All ~49 owned verbs run through the wrapper `bin/harness` (resolves the plugin venv in either OS layout, falls back to system `python3`/`python`). It runs on macOS, Linux, and Windows — on Windows it executes under Git Bash, with `bin/harness.cmd` as the cmd.exe sibling. Agents call it; you rarely need to — except `abort`.
 
 | Group | Verbs |
 |---|---|

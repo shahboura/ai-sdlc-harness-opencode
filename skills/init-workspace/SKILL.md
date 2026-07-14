@@ -9,7 +9,7 @@ description: >
 # init-workspace — the interview (M7)
 
 Human-only: the user's consent point for the whole workspace. Every command
-below is `${CLAUDE_PLUGIN_ROOT}/bin/harness <verb> …` — always the full
+below is `bin/harness <verb> …` — always the full
 path; a bare `harness` is not on PATH, and shell variables set in one Bash
 call do not persist to the next. Re-running refreshes **one section at a
 time** (`init-section`), never a full-nuke.
@@ -21,13 +21,13 @@ The harness needs PyYAML; system pythons are often externally managed
 automatically on every future call:
 
 ```
-PY="${CLAUDE_PLUGIN_ROOT}/.venv/bin/python"
-[ -x "$PY" ] || PY="${CLAUDE_PLUGIN_ROOT}/.venv/Scripts/python.exe"
+PY=".venv/bin/python"
+[ -x "$PY" ] || PY=".venv/Scripts/python.exe"
 "$PY" -c "import yaml" 2>/dev/null || {
   SYS="$(command -v python3 || command -v python)" &&
-  "$SYS" -m venv "${CLAUDE_PLUGIN_ROOT}/.venv" &&
-  PY="${CLAUDE_PLUGIN_ROOT}/.venv/bin/python" &&
-  { [ -x "$PY" ] || PY="${CLAUDE_PLUGIN_ROOT}/.venv/Scripts/python.exe"; } &&
+  "$SYS" -m venv ".venv" &&
+  PY=".venv/bin/python" &&
+  { [ -x "$PY" ] || PY=".venv/Scripts/python.exe"; } &&
   "$PY" -m pip install --quiet pyyaml; }
 ```
 
@@ -58,9 +58,9 @@ top-level keys, so `provider`, `repos`, and `language` payloads must be
 **self-nested** under their own section key:
 
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/harness init-section --section provider --json \
+bin/harness init-section --section provider --json \
   '{"provider": {"work_item": "local-markdown", "git": "local", "stories_dir": "stories"}}'
-${CLAUDE_PLUGIN_ROOT}/bin/harness init-section --section repos --json \
+bin/harness init-section --section repos --json \
   '{"repos": {"backend": "/path/to/backend", "frontend": "/path/to/frontend"}}'
 ```
 
@@ -74,7 +74,7 @@ clobbering each other. See step 3.
 
 ## 2 · Discovered, then confirmed
 
-Run `${CLAUDE_PLUGIN_ROOT}/bin/harness discover --repo <path>` per repo. `discover` first
+Run `bin/harness discover --repo <path>` per repo. `discover` first
 ensures the repo is clean and on its default branch (`ensure_default_branch`
 — the same reusable precondition `preflight` uses later): a dirty repo, or
 one mid-rebase/merge, refuses with a clear error — surface it to the user
@@ -130,11 +130,11 @@ through this verb though — that needs a direct edit to `overrides.yaml`.
 
 ## 4 · Verify (a real gate) + finish
 
-1. `${CLAUDE_PLUGIN_ROOT}/bin/harness init-verify` — every check must pass
+1. `bin/harness init-verify` — every check must pass
    (or be `manual` with the user's explicit acknowledgment for MCP
    providers). Failures show remediation; fix and re-run. **Do not proceed
    on failures.**
-2. `${CLAUDE_PLUGIN_ROOT}/bin/harness init-finalize` — writes the permissions
+2. `bin/harness init-finalize` — writes the permissions
    allowlist and the bootstrap marker (section writes alone do not write
    either of these). It re-runs the same verify gate itself and refuses
    (exit 1) if any check still fails, so it can't mark a half-configured

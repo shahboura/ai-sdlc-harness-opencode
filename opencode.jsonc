@@ -1,0 +1,64 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "name": "ai-sdlc-harness",
+  "version": "3.0.4",
+  "description": "Governed multi-agent SDLC pipeline for opencode",
+  "agent": {
+    "planner": {
+      "description": "Planning & analysis agent — orchestrates the SDLC pipeline",
+      "mode": "primary",
+      "model": "anthropic/claude-sonnet-4-5",
+      "permission": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "write": { "ai/*": "allow", ".claude/context/*": "allow", "*": "deny" },
+        "edit": { "ai/*": "allow", ".claude/context/*": "allow", "*": "deny" },
+        "bash": { "*": "ask" },
+        "task": { "developer": "allow", "reviewer": "allow", "*": "deny" },
+        "webfetch": "allow"
+      }
+    },
+    "developer": {
+      "description": "Implementation agent with proof-anchored TDD enforcement",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "anthropic/claude-sonnet-4-5",
+      "permission": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "write": { "*": "ask" },
+        "edit": { "*": "ask" },
+        "bash": { "*": "ask" },
+        "task": "deny"
+      }
+    },
+    "reviewer": {
+      "description": "Code review & security analysis agent (read-only)",
+      "mode": "subagent",
+      "hidden": true,
+      "model": "anthropic/claude-sonnet-4-5",
+      "permission": {
+        "read": "allow",
+        "grep": "allow",
+        "glob": "allow",
+        "write": "deny",
+        "edit": "deny",
+        "bash": { "*": "ask", "npm test*": "allow", "python -m unittest*": "allow", "cat /tmp/*": "allow" },
+        "task": "deny"
+      }
+    }
+  },
+  "default_agent": "planner",
+  "permission": {
+    "bash": "ask",
+    "edit": "ask",
+    "write": "ask"
+  },
+  // DEV MODE: Local path loads .opencode/ from current directory.
+  // Before npm publish, switch to "@shahboura/harness" (published package).
+  "plugin": ["."],
+  "lsp": true,
+  "formatter": true
+}

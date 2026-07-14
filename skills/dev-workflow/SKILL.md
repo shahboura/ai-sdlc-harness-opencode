@@ -13,37 +13,37 @@ write code, never touch `ai/<run>/` authority files directly, and never run
 raw `git commit|merge|rebase` — every mutation goes through `harness`
 (guards block the raw paths and redirect you here).
 
-Every command below runs through `${CLAUDE_PLUGIN_ROOT}/bin/harness` — a
+Every command below runs through `bin/harness` — a
 wrapper script that resolves the plugin venv (created by /init-workspace,
 either OS layout) and falls back to system `python3`/`python` pre-setup;
 it runs under Git Bash on Windows too. `--workspace <ws>` and
 `--run <run>` may go before or after the verb, in any mix — e.g. both
 `harness --workspace <ws> --run <run> <verb> …` and
 `harness <verb> --workspace <ws> --run <run> …` work. Always use the full
-`${CLAUDE_PLUGIN_ROOT}` path; a bare `harness` is not on PATH, and shell
+`.` path; a bare `harness` is not on PATH, and shell
 variables do not persist between separate Bash calls. Non-zero exit =
 refused; read the JSON error.
 
 ## Startup
 
-1. `${CLAUDE_PLUGIN_ROOT}/bin/harness fetch --id <work-item-id>` — refuses if bootstrap is incomplete
+1. `bin/harness fetch --id <work-item-id>` — refuses if bootstrap is incomplete
    (run `/init-workspace` first) or a live run already exists (offer the user
    **Resume or Abort** — never clobber). Abort is a real verb:
-   `${CLAUDE_PLUGIN_ROOT}/bin/harness abort --run <run> --reason "<why>"` —
+   `bin/harness abort --run <run> --reason "<why>"` —
    terminal (mutations refuse from then on), sweeps worktrees, keeps the
    audit trail, and releases the work-item slot so a fresh fetch works.
    On success note `run`, `mode`.
-2. The pipeline manifest (`${CLAUDE_PLUGIN_ROOT}/pipeline/manifest.yaml`) is
+2. The pipeline manifest (`pipeline/manifest.yaml`) is
    the single source of truth for step order. Do not improvise steps.
 
 ## The walk
 
 Loop until the mode's sequence is exhausted, then close the run:
-`${CLAUDE_PLUGIN_ROOT}/bin/harness complete --run <run>` (terminal, the
+`bin/harness complete --run <run>` (terminal, the
 successful sibling of abort — the final step's file says exactly when).
 
-1. `${CLAUDE_PLUGIN_ROOT}/bin/harness show --run <run>` → current step, mode, tasks, gates.
-2. Read the step's file: `${CLAUDE_PLUGIN_ROOT}/skills/dev-workflow/steps/<step>.md`
+1. `bin/harness show --run <run>` → current step, mode, tasks, gates.
+2. Read the step's file: `.opencode/skills/dev-workflow/steps/<step>.md`
    — load ONE step file at a time (context economy). Gate steps all use
    `steps/gate.md`.
 3. Execute it. Spawning a shape? The prompt MUST carry the structured headers
@@ -56,7 +56,7 @@ successful sibling of abort — the final step's file says exactly when).
    verdicts (a per-task review whose spawn omits it cannot satisfy the
    task's completion guard), `harness-repo`/`harness-test-cmd` scope the
    subagent's work. Before
-   every spawn, resolve its model: `${CLAUDE_PLUGIN_ROOT}/bin/harness
+   every spawn, resolve its model: `bin/harness
    resolve-model --shape <shape> --mode <mode>` (per-mode ?? per-shape
    default ?? `inherit`, from `subagent_models`). Pass the result as the
    spawn's `model` param — unless it's the literal string `inherit`, in
@@ -67,7 +67,7 @@ successful sibling of abort — the final step's file says exactly when).
    background spawn returns only a launch stub — verdict lost, stall
    event fabricated; the guard blocks an explicit `true`). Parallelism =
    batch multiple foreground spawns in ONE message, never backgrounding.
-4. Advance: `${CLAUDE_PLUGIN_ROOT}/bin/harness cursor --to <next> --run <run>`. If refused, you are
+4. Advance: `bin/harness cursor --to <next> --run <run>`. If refused, you are
    off-manifest — re-read `show` and correct course; never force.
 
 ## Cross-cutting rules
@@ -82,7 +82,7 @@ successful sibling of abort — the final step's file says exactly when).
   The reply must be a plain typed chat message (never AskUserQuestion —
   its answers bypass the capture hook and can never qualify). A refusal
   means no qualifying reply: re-present or route to ad-hoc.
-- **Stalls:** a subagent that stops without a status block → `${CLAUDE_PLUGIN_ROOT}/bin/harness stall
+- **Stalls:** a subagent that stops without a status block → `bin/harness stall
   --task <T>` and follow the returned action (`reinvoke` → `recovery` →
   `human`). NEVER commit or write on a stalled agent's behalf.
 - **Ad-hoc human requests mid-run:** spawn `reviewer` with
@@ -98,9 +98,9 @@ successful sibling of abort — the final step's file says exactly when).
   - **After preflight** (task completion, and each later gate crossing):
     mirror into **every preflighted repo** (the `branches` artifact in
     `show` lists them) — one call per repo:
-    `${CLAUDE_PLUGIN_ROOT}/bin/harness publish-mirror --repo <preflighted-repo-path> --run <run>`.
+    `bin/harness publish-mirror --repo <preflighted-repo-path> --run <run>`.
     In a single-repo run that's one call; in a multi-repo run, one per repo.
   - It's best-effort/non-blocking: a repo that can't be committed to (no
     git, detached, etc.) just isn't mirrored — never block the run on it.
-- **Status:** render progress with `${CLAUDE_PLUGIN_ROOT}/bin/harness show`; the ledgers
+- **Status:** render progress with `bin/harness show`; the ledgers
   (`events/tokens.ndjson`) are append-only — read, never write.

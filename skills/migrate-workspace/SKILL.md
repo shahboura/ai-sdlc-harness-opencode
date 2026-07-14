@@ -16,14 +16,14 @@ else. Everything that WRITES goes through the same owned path as
 migrate verbs are read-only proposals.
 
 Human-only, same invocation rules as every skill here: always the full
-`${CLAUDE_PLUGIN_ROOT}/bin/harness <verb>` path. First run
+`bin/harness <verb>` path. First run
 `/init-workspace`'s **step 0 environment bootstrap** exactly as written
 there (that file owns the procedure — don't re-derive it).
 
 ## 1 · Detect (stop conditions first)
 
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/harness migrate-detect
+bin/harness migrate-detect
 ```
 
 - Surface `warnings` verbatim whenever present — e.g. an unreadable
@@ -53,7 +53,7 @@ ${CLAUDE_PLUGIN_ROOT}/bin/harness migrate-detect
 ## 2 · Extract & confirm (propose-only)
 
 ```
-${CLAUDE_PLUGIN_ROOT}/bin/harness migrate-extract
+bin/harness migrate-extract
 ```
 
 Present the proposal per section — `provider`, `repos`, `language` — next
