@@ -6,7 +6,7 @@ stall pauses that lane only (fail-soft); gates and pre-pr require ALL lanes
 complete (fail-closed sync points — mechanically enforced: the cursor cannot
 leave `develop` while any task is still pending/in-progress/in-review).
 
-Once, before the first task: `bin/harness write-back
+Once, before the first task: `npx @shahboura/harness write-back
 --milestone develop_start --run <run>` (no-ops cleanly if
 `write_back.on_develop_start` is off or the provider/type resolve no target;
 for an MCP-transport work-item provider it also no-ops, returning
@@ -15,11 +15,11 @@ sync, otherwise nothing further to do).
 
 Per task:
 
-1. **Worktree:** `bin/harness worktree-add --repo <repo> --task-id <T>
+1. **Worktree:** `npx @shahboura/harness worktree-add --repo <repo> --task-id <T>
    --base <feature-branch> --run <run>` — records `{path, branch}` in state;
    idempotent on resume. If it fails twice it names the direct-branch
    fallback — offer that choice to the user, never improvise.
-2. `bin/harness task --id <T> --to in-progress --run <run>`
+2. `npx @shahboura/harness task --id <T> --to in-progress --run <run>`
 3. **Spawn `developer`** with headers (`harness-mode: develop`,
    `harness-task: <T>`, `harness-run`, `harness-repo: <worktree-path>`,
    `harness-test-cmd`: the task's registered repo's own `language.repos.<repo-name>.test_cmd`
@@ -27,7 +27,7 @@ Per task:
    this task's repo was registered under in `repos.yaml`) + the task's plan
    section. It follows `steps/develop-task.md` (TDD: verify-red, then
    impl, then a harness commit).
-4. **Completion:** `bin/harness task --id <T> --to in-review --repo <worktree>
+4. **Completion:** `npx @shahboura/harness task --id <T> --to in-review --repo <worktree>
    --run <run>` (`--test-cmd <cmd>` optional — omitted, it auto-resolves from
    language-config for this task's registered repo) — runs verify-green +
    the red-proof check; a refusal means the TDD contract wasn't met (send
@@ -37,7 +37,7 @@ Per task:
    captures the reviewer's `verdict:` line into `reviews.ndjson` keyed by
    it, and step 7's `task --to done` REFUSES without a captured APPROVED
    for this task) on the task diff. `CHANGES_REQUESTED` →
-   `bin/harness task --id <T> --to in-progress --run <run>`
+   `npx @shahboura/harness task --id <T> --to in-progress --run <run>`
    (round-bounded; a refusal = escalate to the human) and re-spawn the
    developer with the findings. `APPROVED` → continue.
    **Verdict not captured** (a `verdict-uncaptured` event, or step 7
@@ -46,15 +46,15 @@ Per task:
    one: continuation replies pass through no capture hook, so a restated
    verdict there can never register, however clean (field finding).
 6. **Squash:** from the feature-branch checkout:
-   `bin/harness merge-task --repo <repo> --task-id <T> --task-branch
+   `npx @shahboura/harness merge-task --repo <repo> --task-id <T> --task-branch
    <worktree-branch> --summary "<task summary>" --run <run>`
-7. `bin/harness task --id <T> --to done --run <run>`
+7. `npx @shahboura/harness task --id <T> --to done --run <run>`
    (refused unless the hook captured this task's reviewer APPROVED — spawn
-   the reviewer, don't restate its verdict) → `bin/harness worktree-remove --repo
-   <repo> --task-id <T> --run <run>` → `bin/harness publish-mirror --repo <repo> --run <run>`.
+   the reviewer, don't restate its verdict) → `npx @shahboura/harness worktree-remove --repo
+   <repo> --task-id <T> --run <run>` → `npx @shahboura/harness publish-mirror --repo <repo> --run <run>`.
 
 All tasks done → record the declared artifact the ⟨approve-impl⟩ gate
-presents: `bin/harness artifact --name task-commits
+presents: `npx @shahboura/harness artifact --name task-commits
 --value "<T1>: <sha1>; <T2>: <sha2>; …" --run <run>` (the SHAs are in
-`show`'s tasks) → `bin/harness cursor --to <next> --run <run>`
+`show`'s tasks) → `npx @shahboura/harness cursor --to <next> --run <run>`
 (⟨approve-impl⟩ in full; quick-recheck in quick).

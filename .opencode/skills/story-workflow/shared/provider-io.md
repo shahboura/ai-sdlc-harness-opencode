@@ -10,7 +10,7 @@ every command cites it.
 Run:
 
 ```
-bin/harness provider --op work_item.fetch --id <id>
+npx @shahboura/harness provider --op work_item.fetch --id <id>
 ```
 
 **CLI / file transport** (`local-markdown`, `github`, `gitlab`, `ado`) prints
@@ -32,7 +32,7 @@ invoke — that refusal *is* the instruction. Invoke that tool yourself, capture
 its raw JSON, then normalize it to the shape above:
 
 ```
-printf '%s' '<raw-json>' | bin/harness provider-normalize --op work_item.fetch
+printf '%s' '<raw-json>' | npx @shahboura/harness provider-normalize --op work_item.fetch
 ```
 
 ⚠️ That refusal message ends by telling you to pipe the raw result into the
@@ -49,7 +49,7 @@ Story-quality output goes back as a **comment** — never by editing the item's
 Description or Acceptance-Criteria fields:
 
 ```
-bin/harness provider --op work_item.add_comment --id <id> --text '<markdown>'
+npx @shahboura/harness provider --op work_item.add_comment --id <id> --text '<markdown>'
 ```
 
 - **CLI / file transport** posts directly (`local-markdown` appends under a

@@ -3,7 +3,7 @@
 Coverage top-up after ⟨approve-impl⟩ — tests here are green-from-birth
 (they cover code that already exists), so NO red-proof machinery applies.
 
-1. Resolve the coverage command: `bin/harness
+1. Resolve the coverage command: `npx @shahboura/harness
    resolve-coverage-cmd --repo <repo>` (per repo, `language.repos.<repo-
    name>.coverage_cmd` — `discover` proposes one at `/init-workspace` time
    where repo evidence supports it: python/go conventions, a node
@@ -12,7 +12,7 @@ Coverage top-up after ⟨approve-impl⟩ — tests here are green-from-birth
    answer is either a command (write it to
    `language.repos.<name>.coverage_cmd` the `/workspace-config` way, then
    re-resolve) or an explicit skip — record that with
-   `bin/harness log-event --json '{"kind":
+   `npx @shahboura/harness log-event --json '{"kind":
    "coverage-skipped", "repo": "<name>", "reason": "<their words>"}'` and
    harden that repo from the tasks' own test gaps instead. Run the resolved command to find diff-coverage gaps against
    the tasks' touched files.
@@ -25,6 +25,6 @@ Coverage top-up after ⟨approve-impl⟩ — tests here are green-from-birth
    the same repo either fails on "nothing to commit" or sweeps unrelated
    files via `git add -A`). Produce `<run>/reports/coverage.md`
    summarizing before/after coverage and record the declared artifact:
-   `bin/harness artifact --name coverage-report
+   `npx @shahboura/harness artifact --name coverage-report
    --value reports/coverage.md --run <run>`.
-5. Advance: `bin/harness cursor --to security --run <run>`.
+5. Advance: `npx @shahboura/harness cursor --to security --run <run>`.

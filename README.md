@@ -268,7 +268,7 @@ Every guard's fail-open/fail-closed policy is chosen deliberately and tested: re
 
 ## The `harness` CLI
 
-All ~49 owned verbs run through the wrapper `bin/harness` (resolves the plugin venv in either OS layout, falls back to system `python3`/`python`). It runs on macOS, Linux, and Windows — on Windows it executes under Git Bash, with `bin/harness.cmd` as the cmd.exe sibling. Agents call it; you rarely need to — except `abort`.
+All ~49 owned verbs run through `npx @shahboura/harness <verb>` (wraps the script at `bin/harness`, which resolves the plugin venv in either OS layout, falls back to system `python3`/`python`). It runs on macOS, Linux, and Windows — on Windows it executes under Git Bash, with `bin/harness.cmd` as the cmd.exe sibling. Agents invoke it via `npx @shahboura/harness`; you can too, or use the shorter `npx harness` if the package is installed.
 
 | Group | Verbs |
 |---|---|
@@ -354,7 +354,7 @@ The test suite (606 tests) covers the state engine, gate grammar, guard behavior
 
 **Can I resume after closing the terminal?** Yes — `state.yaml` *is* the resume point. Start a new session in the same workspace, run `/workflow-status` to see where you are, then `/dev-workflow <id>`: it detects the live run and offers **Resume or Abort** — never clobbers.
 
-**How do I abandon a run?** `harness abort --run <run> --reason "<why>"` (via the plugin's `bin/harness`). Terminal: sweeps worktrees, keeps the full audit trail, frees the work item. A same-day re-run gets a fresh `-2` suffix slot; nothing is deleted.
+**How do I abandon a run?** `npx @shahboura/harness abort --run <run> --reason "<why>"`. Terminal: sweeps worktrees, keeps the full audit trail, frees the work item. A same-day re-run gets a fresh `-2` suffix slot; nothing is deleted.
 
 **What does exit code 3 mean?** A sealed file (`state.yaml`, a ledger, a red-proof) changed outside the owned verbs. Every verb refuses until you inspect the diff and run `harness reseal` — deliberately loud, because silent tolerance would make the audit trail worthless.
 

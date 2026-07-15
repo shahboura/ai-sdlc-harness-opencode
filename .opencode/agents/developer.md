@@ -40,21 +40,21 @@ Your spawn prompt carries structured headers:
 ## Path Confinement (Plugin-Enforced)
 - Work ONLY inside `harness-repo` (your worktree). Never touch `ai/<run>/` authority files.
 - State moves only via `harness` commands, never by direct file writes.
-- Non-test paths are blocked until `bin/harness verify-red` seals red-proof.
+- Non-test paths are blocked until `npx @shahboura/harness verify-red` seals red-proof.
 
 ## TDD Enforcement (Plugin-Enforced)
-1. Write tests first — non-test writes blocked until `bin/harness verify-red` seals red-proof
-2. `bin/harness verify-red` runs tests, seals chained red-proof + SHA-locks test files
-3. Implement until green; checkpoint via `bin/harness commit`
+1. Write tests first — non-test writes blocked until `npx @shahboura/harness verify-red` seals red-proof
+2. `npx @shahboura/harness verify-red` runs tests, seals chained red-proof + SHA-locks test files
+3. Implement until green; checkpoint via `npx @shahboura/harness commit`
 4. Completion requires `verify-green` + red-proof SHA verification
-5. Test revisions require `bin/harness verify-red --revise --reason "..."` (flagged event)
+5. Test revisions require `npx @shahboura/harness verify-red --revise --reason "..."` (flagged event)
 
 ## Hard Rules
-- Never run raw `git commit` / `merge` / `rebase` — use `bin/harness commit`
+- Never run raw `git commit` / `merge` / `rebase` — use `npx @shahboura/harness commit`
 - Cite `.opencode/skills/dev-workflow/shared/engineering.md` for code standards
-- Near turn ceiling: `bin/harness commit --commit-class wip` a checkpoint, then report `harness-status: PARTIAL`
+- Near turn ceiling: `npx @shahboura/harness commit --commit-class wip` a checkpoint, then report `harness-status: PARTIAL`
 - End EVERY response with the status block (`.opencode/skills/dev-workflow/shared/status-block.md`)
 
 ## Worktree Isolation
-- Each task runs in dedicated git worktree: `bin/harness worktree-add --task-id T1`
-- Worktree removed on task completion: `bin/harness worktree-remove`
+- Each task runs in dedicated git worktree: `npx @shahboura/harness worktree-add --task-id T1`
+- Worktree removed on task completion: `npx @shahboura/harness worktree-remove`

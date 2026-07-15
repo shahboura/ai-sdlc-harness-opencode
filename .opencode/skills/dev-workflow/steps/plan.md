@@ -7,13 +7,13 @@
    (`.claude/context/repo-map/<name>/.meta.json`) — not in `state.yaml`, so
    the `show` verb won't surface it; check it explicitly, per registered
    repo:
-   `bin/harness repo-map-check --repo-name <name>
+   `npx @shahboura/harness repo-map-check --repo-name <name>
    --repo <path>`.
    - `fresh` → nothing to do (init already generated + stamped it; do NOT
      re-stamp).
    - `missing`/`stale` → regenerate (spawn `planner` with
      `harness-mode: repo-map`, a declared out-of-run-legal pair) and stamp
-     via `bin/harness repo-map-stamp` after it
+     via `npx @shahboura/harness repo-map-stamp` after it
      returns — a plan grounded in a stale map cites patterns that no longer
      exist.
 0b. **Re-entering plan** (gate rejection / approved mid-run amendment)?
@@ -46,7 +46,7 @@ B1/B2/B7/B8 — the gate presents all of it):
 When the planner's status block reports the plan ready:
 
 1. Register the tasks it declared (replaces the single fetch-seeded task):
-   `bin/harness plan-register --run <run> --tasks-json
+   `npx @shahboura/harness plan-register --run <run> --tasks-json
    '[{"id":"T1","repo":"<path>","risk":"low","test_intents":["test_name_one",
    "test_name_two"]}, …]'` — `repo` must be the exact path string from this
    workspace's `repos.yaml` (i.e. `config["repos"]`'s VALUE, e.g.
@@ -68,13 +68,13 @@ When the planner's status block reports the plan ready:
    prose fragment is rejected at plan-register and would false-report drift.
    All fragments must be present; the flat legacy `"repos":["a","b"]` form
    still works in place of `producer`/`consumers`. Legal only at cursor `plan`.
-2. Check the diagrams: `bin/harness validate-mermaid
+2. Check the diagrams: `npx @shahboura/harness validate-mermaid
    --file <run>/plan.md`. A non-zero exit names structural rule violations
    (`failures` in the JSON) — send the planner back to fix them, never
    advance past a failure. Purely structural (well-formed Mermaid that
    exists); it doesn't check the four diagrams are actually present — that
    stays plan-task.md's content-contract job.
-3. Record the declared artifact: `bin/harness
+3. Record the declared artifact: `npx @shahboura/harness
    artifact --name plan --value plan.md --run <run>` (the gate presents it
    by this name).
-4. Advance to the gate: `bin/harness cursor --to approve-plan --run <run>`.
+4. Advance to the gate: `npx @shahboura/harness cursor --to approve-plan --run <run>`.

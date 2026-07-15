@@ -11,7 +11,7 @@ description: >
 # init-workspace — the interview (M7)
 
 Human-only: the user's consent point for the whole workspace. Every command
-below is `bin/harness <verb> …` — always the full
+below is `npx @shahboura/harness <verb> …` — always the full
 path; a bare `harness` is not on PATH, and shell variables set in one Bash
 call do not persist to the next. Re-running refreshes **one section at a
 time** (`init-section`), never a full-nuke.
@@ -19,7 +19,7 @@ time** (`init-section`), never a full-nuke.
 ## 0 · Environment bootstrap (do this FIRST)
 
 The harness needs PyYAML; system pythons are often externally managed
-(PEP 668), so the plugin owns a venv that `bin/harness` resolves
+(PEP 668), so the plugin owns a venv that `npx @shahboura/harness` resolves
 automatically on every future call:
 
 ```
@@ -37,7 +37,7 @@ One snippet for every OS: the Bash tool is Git Bash on Windows, so this
 stays POSIX shell there too — the two `.venv` probes cover the `bin/` (POSIX)
 vs `Scripts/` (Windows) venv layouts, and the `python3 || python` fallback
 covers hosts where only one spelling exists. Until this step runs,
-`bin/harness` itself still works (it falls back to the same system
+`npx @shahboura/harness` itself still works (it falls back to the same system
 interpreter probe, which is what fails on a PyYAML-less system — that's why
 this step exists), and the spawn/skill guards degrade open with a one-line
 notice rather than erroring — expected pre-setup behavior, not a bug to chase.
@@ -60,9 +60,9 @@ top-level keys, so `provider`, `repos`, and `language` payloads must be
 **self-nested** under their own section key:
 
 ```
-bin/harness init-section --section provider --json \
+npx @shahboura/harness init-section --section provider --json \
   '{"provider": {"work_item": "local-markdown", "git": "local", "stories_dir": "stories"}}'
-bin/harness init-section --section repos --json \
+npx @shahboura/harness init-section --section repos --json \
   '{"repos": {"backend": "/path/to/backend", "frontend": "/path/to/frontend"}}'
 ```
 
@@ -76,7 +76,7 @@ clobbering each other. See step 3.
 
 ## 2 · Discovered, then confirmed
 
-Run `bin/harness discover --repo <path>` per repo. `discover` first
+Run `npx @shahboura/harness discover --repo <path>` per repo. `discover` first
 ensures the repo is clean and on its default branch (`ensure_default_branch`
 — the same reusable precondition `preflight` uses later): a dirty repo, or
 one mid-rebase/merge, refuses with a clear error — surface it to the user
@@ -132,11 +132,11 @@ through this verb though — that needs a direct edit to `overrides.yaml`.
 
 ## 4 · Verify (a real gate) + finish
 
-1. `bin/harness init-verify` — every check must pass
+1. `npx @shahboura/harness init-verify` — every check must pass
    (or be `manual` with the user's explicit acknowledgment for MCP
    providers). Failures show remediation; fix and re-run. **Do not proceed
    on failures.**
-2. `bin/harness init-finalize` — writes the permissions
+2. `npx @shahboura/harness init-finalize` — writes the permissions
    allowlist and the bootstrap marker (section writes alone do not write
    either of these). It re-runs the same verify gate itself and refuses
    (exit 1) if any check still fails, so it can't mark a half-configured

@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # Resolves the plugin venv (created by /init-workspace); falls back to
-# system python3/python pre-setup. Every skill/step file invokes THIS,
-# never a bare `harness` (no such binary exists) or a shell-state-dependent
-# alias (Bash tool calls don't persist shell state between invocations).
+# system python3/python pre-setup. Every skill/step file invokes THIS
+# via `npx @shahboura/harness`, which routes through the npm bin symlink.
 # On Windows the Bash tool is Git Bash, so this same script runs there too:
 # the venv layout is Scripts/python.exe, and `python3` frequently doesn't
 # exist (python.org installs ship only `python`) — probe both. bin/
 # harness.cmd is the cmd.exe sibling for non-bash callers.
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve through npm's node_modules/.bin symlink to the real package dir
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+HERE="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 PY="$HERE/../.venv/bin/python"
 [ -x "$PY" ] || PY="$HERE/../.venv/Scripts/python.exe"
 [ -x "$PY" ] || PY="$(command -v python3 || command -v python || echo python3)"

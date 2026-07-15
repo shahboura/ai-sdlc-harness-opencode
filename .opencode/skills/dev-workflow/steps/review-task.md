@@ -12,7 +12,7 @@ the develop loop:
 - Check the diff against: the task's plan section (scope drift?), the
   config review-policy rules, and the engineering baseline
   (`shared/engineering.md`). For test-intents: run
-  `bin/harness show-redproof --task <T> --run <run>`
+  `npx @shahboura/harness show-redproof --task <T> --run <run>`
   (chain-verified; a raw `.redproof/` read skips integrity verification
   and is guard-BLOCKED — and type that full invocation exactly: the bare
   `harness` spelling is neither on PATH nor allow-listed, so it dies as a

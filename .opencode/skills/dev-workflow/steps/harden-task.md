@@ -8,5 +8,5 @@ meaningful, not gaming:
   Status-code-only or not-throws-only assertions are incomplete.
 - Target the diff-coverage gaps you were given, not incidental old code.
 - Never modify implementation code in this mode — tests only.
-- Commit via `bin/harness commit --commit-class working`; report via the status
+- Commit via `npx @shahboura/harness commit --commit-class working`; report via the status
   block with the coverage delta you achieved.

@@ -46,7 +46,7 @@ state, not a scope decision. Do not present it to the human as one; the real
 task list is set at plan-register and replaces it wholesale.
 
 Record the declared artifact once requirements.md is final:
-`bin/harness artifact --name requirements-summary
+`npx @shahboura/harness artifact --name requirements-summary
 --value requirements.md --run <run>`.
 
-Then advance: `bin/harness cursor --to plan --run <run>`.
+Then advance: `npx @shahboura/harness cursor --to plan --run <run>`.

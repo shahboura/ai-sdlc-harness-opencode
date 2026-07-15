@@ -5,13 +5,13 @@ a PR/MR against it — push it first (owned entry point, RC1: never a raw
 `git push`):
 
 ```
-bin/harness push --repo <repo> --branch <feature-branch> --run <run>
+npx @shahboura/harness push --repo <repo> --branch <feature-branch> --run <run>
 ```
 
 Then create the PR:
 
 ```
-bin/harness create-pr --repo <repo> --run <run>
+npx @shahboura/harness create-pr --repo <repo> --run <run>
 ```
 
 Creates the PR via the configured git provider (title from the declared
@@ -34,6 +34,6 @@ REQUIRED here: the PR was created from the already-pushed branch, so a
 mirror commit made after it stays local forever without its own push
 (field finding: every run ended with its audit snapshot stranded one
 commit ahead of the remote, invisible to the PR reviewer):
-`bin/harness publish-mirror --repo <preflighted-repo-path> --push --run <run>`.
+`npx @shahboura/harness publish-mirror --repo <preflighted-repo-path> --push --run <run>`.
 Advance to `reconcile`. The `pr-comments` group is now available on demand
 (round-triggered, repeatable).

@@ -4,25 +4,25 @@ Triggered when PR review comments arrive (`reenter_when:
 new_comments_present` — re-entry after apply-fixes is a declared edge).
 
 1. Fetch the comments via the git provider:
-   `bin/harness fetch-pr-comments --repo <repo> --run <run>`
+   `npx @shahboura/harness fetch-pr-comments --repo <repo> --run <run>`
    (`local` provider returns none — paste them yourself for that case).
 2. Spawn `reviewer` with `harness-mode: analyze-comments` + the comments.
    It follows `steps/comment-analysis.md`.
 3. Persist its analysis to `<run>/reports/comments-round-<n>.md`, numbering
    each comment (`[1]`, `[2]`, …), and record the declared artifact:
-   `bin/harness artifact --name comment-analysis
+   `npx @shahboura/harness artifact --name comment-analysis
    --value reports/comments-round-<n>.md --run <run>`.
 4. Present ⟨select-comments⟩ — a `select` gate, not an approve/reject one.
    The candidate list is supplied ONCE, at present time, and sealed into
    state — decide replays that exact list, so the numbering the human saw
    can never be redefined between present and decide (RC3):
    ```
-   bin/harness gate --id select-comments --present \
+   npx @shahboura/harness gate --id select-comments --present \
      --options <comment-id-1>,<comment-id-2>,... --run <run>
    ```
    Show the numbered list (same order), wait for the reply, then:
    ```
-   bin/harness gate --id select-comments --decide --run <run>
+   npx @shahboura/harness gate --id select-comments --decide --run <run>
    ```
    The human's reply (e.g. `1,3`) becomes a LIST decision — any parseable
    selection is forward-legal, so this never routes to `on_reject`; it just

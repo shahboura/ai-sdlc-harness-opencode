@@ -18,6 +18,6 @@ Regenerate the codebase map used by the planner for grounding implementation pla
 - `--repo <path>` — Path to the repo
 
 ## Workflow
-1. `bin/harness repo-map-check --repo-name <n> --repo <path>` — Check staleness
+1. `npx @shahboura/harness repo-map-check --repo-name <n> --repo <path>` — Check staleness
 2. Generate tiered map (structure → key files → details)
-3. `bin/harness repo-map-stamp --repo-name <n> --repo <path>` — Stamp freshness
+3. `npx @shahboura/harness repo-map-stamp --repo-name <n> --repo <path>` — Stamp freshness

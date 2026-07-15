@@ -19,8 +19,8 @@ Register a new repository into an existing workspace without re-running the full
 - `--test-cmd <cmd>` — Test command (auto-discovered if omitted)
 
 ## Workflow
-1. `bin/harness discover --repo <path>` — Auto-detect toolchain
+1. `npx @shahboura/harness discover --repo <path>` — Auto-detect toolchain
 2. Review discovered settings
-3. `bin/harness add-repo --name <n> --path <path> --test-cmd <cmd>`
-4. `bin/harness init-verify` — Verification gate
-5. `bin/harness init-finalize` — Finalize configuration
+3. `npx @shahboura/harness add-repo --name <n> --path <path> --test-cmd <cmd>`
+4. `npx @shahboura/harness init-verify` — Verification gate
+5. `npx @shahboura/harness init-finalize` — Finalize configuration

@@ -4,12 +4,12 @@ Create the feature branch in each affected repo from the declared naming
 template — one owned command per repo:
 
 ```
-bin/harness preflight --repo <repo-path> --run <run>
+npx @shahboura/harness preflight --repo <repo-path> --run <run>
 ```
 
 First ensures the repo is clean and on its default branch (the reusable
 precondition `discover` also uses at `/init-workspace` time, standalone as
-`bin/harness ensure-default-branch --repo <repo-path>
+`npx @shahboura/harness ensure-default-branch --repo <repo-path>
 [--branch <name>]` for any future step that needs it) — a dirty repo, or
 one mid-rebase/merge, refuses
 (surface to the human, never auto-stash/discard/continue); a clean repo on
@@ -28,5 +28,5 @@ by the commit verbs' `git add -A`; the commit verbs refuse-and-unstage as
 backstop. Then:
 
 ```
-bin/harness cursor --to develop --run <run>
+npx @shahboura/harness cursor --to develop --run <run>
 ```

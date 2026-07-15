@@ -3,7 +3,7 @@
 You own ONE task, in YOUR worktree (`harness-repo`), test-first.
 
 **The rule is per-task data, not the mode's name:** if your task declares
-`test_intents` (check it in `bin/harness show`'s task
+`test_intents` (check it in `npx @shahboura/harness show`'s task
 list), the completion transition mechanically requires a red-proof — there
 is no path to done that skips it. If it declares none, the red-proof
 machinery is inactive and `task --to in-review` skips both verify-red and
@@ -29,7 +29,7 @@ none — that's why quick runs are relaxed by design, not an oversight.
    (Quick mode: skip straight to writing test + implementation together —
    there's no red-proof to prove first.)
 3. **Prove red (only when your task declares test-intents):**
-   `bin/harness verify-red --repo <repo> --task <T> --run <run>`
+   `npx @shahboura/harness verify-red --repo <repo> --task <T> --run <run>`
    (`--test-cmd <cmd>` from your `harness-test-cmd` header; omit it and the
    command auto-resolves from language-config for this task's registered
    repo) — must succeed before any impl. If it reports "not red", your impl
@@ -44,7 +44,7 @@ none — that's why quick runs are relaxed by design, not an oversight.
    same flagged `--revise` path as any other post-seal test change, not a
    silent add.
 4. **Implement** until the test passes. Checkpoint with
-   `bin/harness commit --repo <repo> --task-id <T> --summary "<what>"`
+   `npx @shahboura/harness commit --repo <repo> --task-id <T> --summary "<what>"`
    (working commits; squashed later — never raw `git commit`).
 5. **Full-suite check:** run `<test-cmd>`; fix regressions you introduced.
 6. Report via the status block: `harness-status: SUCCESS` with

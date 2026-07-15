@@ -11,7 +11,7 @@ description: >
 
 # add-repo
 
-Every command below is `bin/harness <verb> …` — run it
+Every command below is `npx @shahboura/harness <verb> …` — run it
 yourself via Bash. Never ask the user to type a `harness` command; the user
 only answers the questions below.
 
@@ -22,7 +22,7 @@ only answers the questions below.
 
 ## 2 · Discover, then confirm
 
-`bin/harness discover --repo <path>` — same discovery
+`npx @shahboura/harness discover --repo <path>` — same discovery
 `/init-workspace` uses. It first ensures the repo is clean and on its
 default branch: a dirty repo, or one mid-rebase/merge, refuses with a clear
 error — surface that to the user verbatim, never auto-stash/discard. If the
@@ -53,7 +53,7 @@ defaults-to-confirm, not facts:
 ## 3 · Register
 
 ```
-bin/harness add-repo --name <n> --path <path> --test-cmd '<confirmed cmd>'
+npx @shahboura/harness add-repo --name <n> --path <path> --test-cmd '<confirmed cmd>'
 ```
 
 This merges into the existing repo/language config — every already-
@@ -74,11 +74,11 @@ resupply the whole map, not just this repo's entry).
 
 ## 4 · Verify + finish
 
-1. `bin/harness init-verify` — every check must pass
+1. `npx @shahboura/harness init-verify` — every check must pass
    (or be `manual` with the user's explicit acknowledgment, for MCP-
    transport work-item providers). **Do not proceed on failures** — show
    the remediation, fix, re-run.
-2. `bin/harness init-finalize` — refreshes the
+2. `npx @shahboura/harness init-finalize` — refreshes the
    permission allowlist to cover the new repo (its `test_cmd` binary,
    `Read` on its path). Confirm `.claude/settings.json` merged cleanly.
 3. **Repo-map**: offer to generate now — run `/repo-map-refresh`'s step 2

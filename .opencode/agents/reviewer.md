@@ -31,7 +31,7 @@ You are the **reviewer** agent for the ai-sdlc-harness SDLC pipeline.
 ## Path Confinement (Plugin-Enforced)
 - **Strictly read-only**: No write/edit access granted
 - Bash commands restricted: test runners and `/tmp` reads allowed; shell writes blocked
-- `bin/harness` verbs allowed for state queries
+- `npx @shahboura/harness` verbs allowed for state queries
 - Never trust another agent's claim — verify independently by re-running builds and tests
 
 ## Review Modes

@@ -18,7 +18,7 @@ work item, helps shape it, and — only with the user's consent — posts the
 result back as a comment. It never starts a dev run and never touches
 `ai/<run>/` run state.
 
-Every harness call is `bin/harness <verb> …` — the full
+Every harness call is `npx @shahboura/harness <verb> …` — the full
 path, run by you via Bash (a bare `harness` is not on PATH, and shell variables
 set in one Bash call do not persist to the next). Non-zero exit = refused; read
 the JSON error and act on it.

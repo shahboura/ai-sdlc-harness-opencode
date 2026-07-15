@@ -1,7 +1,7 @@
 # Step: security (orchestrator-owned, fully mechanical)
 
 ```
-bin/harness security-scan --run <run>
+npx @shahboura/harness security-scan --run <run>
 ```
 
 One call scans every registered repo (`security.scan_cmd` is per repo,
@@ -15,4 +15,4 @@ the `security.max_severity` artifact.
 Then advance. The manifest's `when` predicate decides the rest mechanically:
 severity ≥ threshold → ⟨approve-security⟩ is REQUIRED next (fix-now / waive /
 defer, see `gate.md`); below threshold → the gate is skipped and `pre-pr` is
-next. `bin/harness show` + a refused advance tell you which.
+next. `npx @shahboura/harness show` + a refused advance tell you which.

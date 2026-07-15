@@ -1,7 +1,7 @@
 # Shared baseline: Mermaid diagram styling (cited by the planner)
 
 Structural rules keep every plan diagram valid, renderable Mermaid.
-**Mechanically enforced** by `bin/harness
+**Mechanically enforced** by `npx @shahboura/harness
 validate-mermaid` (M8 WS-4), run by the orchestrator against `plan.md`
 before the plan gate — a rule violation sends the planner back, it's not
 just a convention to follow on trust.

@@ -28,7 +28,7 @@ Execute the complete governed SDLC pipeline for a work item end-to-end.
 9. **Security Gate** — Conditional (threshold-based)
 10. **Pre-PR Review** — Reviewer agent checks diff
 11. **Human Gate: Approve Pre-PR** — You approve/reject
-12. **Create PR** — `bin/harness create-pr` + `bin/harness push`
+12. **Create PR** — `npx @shahboura/harness create-pr` + `npx @shahboura/harness push`
 13. **Analyze Comments** — Optional: reviewer triages PR comments
 14. **Reconcile** — Apply fixes, update contracts
 15. **Metrics** — Record token spend, cycle time, gate outcomes

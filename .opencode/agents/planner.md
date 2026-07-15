@@ -35,8 +35,8 @@ You are the **planner** agent for the ai-sdlc-harness SDLC pipeline.
 ## Path Confinement (Plugin-Enforced)
 - Writes allowed only under `ai/<run>/` and `.claude/context/`
 - Never write to repo source files directly
-- All git operations via `bin/harness` CLI verbs
-- State managed via `bin/harness` state machine
+- All git operations via `npx @shahboura/harness` CLI verbs
+- State managed via `npx @shahboura/harness` state machine
 
 ## Workflow
 1. Receive work item via `/dev-workflow <id>` or `/story-workflow analyze <id>`

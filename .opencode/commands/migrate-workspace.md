@@ -17,9 +17,9 @@ Migrate an existing v2.x workspace to the v3.0 format. Configuration carries ove
 - `--path <path>` — Path to existing v2.x workspace (defaults to current directory)
 
 ## Workflow
-1. `bin/harness migrate-detect` — Detect v2.x workspace structure
+1. `npx @shahboura/harness migrate-detect` — Detect v2.x workspace structure
 2. Review detected settings
-3. `bin/harness migrate-extract` — Extract and convert configuration
+3. `npx @shahboura/harness migrate-extract` — Extract and convert configuration
 4. Verify migrated workspace
 5. Archive old run history
 
