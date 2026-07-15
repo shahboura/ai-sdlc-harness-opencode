@@ -30,14 +30,36 @@ The original harness works, but almost all of its accumulated complexity compens
 
 ## Install
 
-Not yet published to a plugin marketplace — run it from a local clone:
+### Via npm (CLI + opencode configs)
+
+```sh
+npm install --save-dev @shahboura/harness
+```
+
+Then run commands with `npx`:
+
+```sh
+npx harness init          # bootstrap a workspace
+npx harness schema        # validate declared data
+npx harness status        # show run status
+```
+
+Requires **Python 3.10+** and **PyYAML** on the host machine (the postinstall script checks for both). These are not npm-managed — install them with:
+
+```sh
+python3 -m pip install pyyaml
+```
+
+### Via clone (plugin mode)
+
+Run it as an opencode plugin from a local clone:
 
 ```sh
 git clone <this-repo> ai-sdlc-harness
 claude --plugin-dir /path/to/ai-sdlc-harness
 ```
 
-Then, inside Claude Code:
+Inside Claude Code, run:
 
 ```
 /init-workspace

@@ -15,10 +15,24 @@
     ".opencode/skills/",
     ".opencode/package.json",
     ".opencode/tsconfig.json",
+    "bin/harness",
+    "bin/harness.cmd",
+    "harness/**/*.py",
+    "hooks/guards.py",
+    "hooks/hooks.json",
+    "pipeline/",
+    "config/",
+    "scripts/postinstall.js",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
+  "bin": {
+    "harness": "bin/harness"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
   "publishConfig": {
     "access": "public"
   },
